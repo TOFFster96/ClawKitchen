@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { runOpenClaw } from "@/lib/openclaw";
 
 type Recipe = {
   id: string;
@@ -8,10 +9,8 @@ type Recipe = {
 };
 
 async function getRecipes(): Promise<Recipe[]> {
-  const res = await fetch("/api/recipes", { cache: "no-store" });
-  if (!res.ok) throw new Error("Failed to load recipes");
-  const json = (await res.json()) as { recipes: Recipe[] };
-  return json.recipes;
+  const { stdout } = await runOpenClaw(["recipes", "list"]);
+  return JSON.parse(stdout) as Recipe[];
 }
 
 export default async function RecipesPage() {
