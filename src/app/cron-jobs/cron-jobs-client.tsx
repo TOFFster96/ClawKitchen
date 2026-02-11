@@ -1,17 +1,28 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 type CronJob = {
   id: string;
   name?: string;
   enabled?: boolean;
-  schedule?: { kind?: string; expr?: string };
+  schedule?: { kind?: string; expr?: string; everyMs?: number };
   state?: { nextRunAtMs?: number };
+  agentId?: string;
+  sessionTarget?: string;
 };
 
+function fmtSchedule(s?: CronJob["schedule"]): string {
+  if (!s) return "";
+  if (s.kind === "cron" && s.expr) return s.expr;
+  if (s.kind === "every" && s.everyMs) {
+    const mins = Math.round(s.everyMs / 60000);
+    return mins >= 60 ? `every ${Math.round(mins / 60)}h` : `every ${mins}m`;
+  }
+  return s.kind ?? "";
+}
+
 export default function CronJobsClient() {
-  const [teamId, setTeamId] = useState<string>("development-team-team");
   const [loading, setLoading] = useState(false);
   const [jobs, setJobs] = useState<CronJob[]>([]);
   const [msg, setMsg] = useState<string>("");
@@ -24,12 +35,12 @@ export default function CronJobsClient() {
     setLoading(true);
     setMsg("");
     try {
-      const res = await fetch(`/api/cron/recipe-installed?teamId=${encodeURIComponent(teamId)}`, { cache: "no-store" });
-      const json = await res.json();
+      const res = await fetch("/api/cron/jobs", { cache: "no-store" });
+      const json = (await res.json()) as { ok: boolean; jobs?: CronJob[]; error?: string };
       if (!res.ok) throw new Error(json.error || "Failed to load");
       setJobs(json.jobs ?? []);
       if ((json.jobs ?? []).length === 0) {
-        setMsg("No recipe-installed cron jobs found for this team (or mapping file is missing).");
+        setMsg("No cron jobs found.");
       }
     } catch (e: unknown) {
       setMsg(e instanceof Error ? e.message : String(e));
@@ -38,6 +49,10 @@ export default function CronJobsClient() {
       setLoading(false);
     }
   }
+
+  useEffect(() => {
+    refresh();
+  }, []);
 
   async function act(id: string, action: "enable" | "disable" | "run") {
     setLoading(true);
@@ -48,7 +63,7 @@ export default function CronJobsClient() {
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ id, action }),
       });
-      const json = await res.json();
+      const json = (await res.json()) as { ok: boolean; error?: string };
       if (!res.ok) throw new Error(json.error || "Action failed");
       setMsg(action === "run" ? "Triggered run." : "Updated.");
       await refresh();
@@ -62,29 +77,21 @@ export default function CronJobsClient() {
   return (
     <div>
       <div className="ck-glass-strong p-4">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-          <div className="flex-1">
-            <label className="text-sm font-medium">Team id</label>
-            <input
-              value={teamId}
-              onChange={(e) => setTeamId(e.target.value)}
-              className="mt-2 w-full rounded-[var(--ck-radius-sm)] border border-white/10 bg-black/25 px-3 py-2 text-sm"
-              placeholder="development-team-team"
-            />
-            <div className="mt-2 text-xs text-[color:var(--ck-text-tertiary)]">
-              Team workspace is resolved as <code>workspace-&lt;teamId&gt;</code> next to agents.defaults.workspace.
-            </div>
+        <div className="flex items-center justify-between">
+          <div>
+            <h2 className="text-lg font-semibold">All Cron Jobs</h2>
+            <p className="mt-1 text-sm text-[color:var(--ck-text-secondary)]">
+              {jobs.length} job{jobs.length !== 1 ? "s" : ""} total · {jobs.filter((j) => j.enabled).length} enabled
+            </p>
           </div>
-          <div className="flex gap-2">
-            <button
-              type="button"
-              onClick={refresh}
-              disabled={loading}
-              className="rounded-[var(--ck-radius-sm)] border border-white/10 bg-white/5 px-3 py-2 text-sm font-medium shadow-[var(--ck-shadow-1)] transition-colors hover:bg-white/10 active:bg-white/15"
-            >
-              Refresh
-            </button>
-          </div>
+          <button
+            type="button"
+            onClick={refresh}
+            disabled={loading}
+            className="rounded-[var(--ck-radius-sm)] border border-white/10 bg-white/5 px-3 py-2 text-sm font-medium shadow-[var(--ck-shadow-1)] transition-colors hover:bg-white/10 active:bg-white/15"
+          >
+            Refresh
+          </button>
         </div>
       </div>
 
@@ -100,10 +107,14 @@ export default function CronJobsClient() {
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
               <div className="min-w-0">
                 <div className="truncate font-medium">{j.name ?? j.id}</div>
-                <div className="mt-1 text-xs text-[color:var(--ck-text-secondary)]">
-                  {j.schedule?.kind === "cron" ? j.schedule.expr : j.schedule?.kind ?? ""}
-                  {" · "}
-                  {j.enabled ? "enabled" : "disabled"}
+                <div className="mt-1 flex flex-wrap gap-x-3 text-xs text-[color:var(--ck-text-secondary)]">
+                  <span>{fmtSchedule(j.schedule)}</span>
+                  <span>{j.enabled ? "✅ enabled" : "⏸ disabled"}</span>
+                  {j.agentId ? <span>agent: {j.agentId}</span> : null}
+                  {j.sessionTarget ? <span>target: {j.sessionTarget}</span> : null}
+                  {j.state?.nextRunAtMs ? (
+                    <span>next: {new Date(j.state.nextRunAtMs).toLocaleString()}</span>
+                  ) : null}
                 </div>
               </div>
               <div className="flex gap-2">
