@@ -11,12 +11,24 @@ export default function Home() {
           Local-first UI for authoring Clawcipes recipes and scaffolding agents/teams.
         </p>
 
-        <div className="mt-6 flex gap-3">
+        <div className="mt-6 flex flex-wrap gap-3">
           <Link
             href="/recipes"
             className="rounded-[var(--ck-radius-sm)] bg-[var(--ck-accent-red)] px-4 py-2 text-sm font-medium text-white shadow-[var(--ck-shadow-1)] transition-colors hover:bg-[var(--ck-accent-red-hover)] active:bg-[var(--ck-accent-red-active)]"
           >
             Recipes
+          </Link>
+          <Link
+            href="/settings"
+            className="rounded-[var(--ck-radius-sm)] border border-white/10 bg-white/5 px-4 py-2 text-sm font-medium text-[color:var(--ck-text-primary)] shadow-[var(--ck-shadow-1)] transition-colors hover:bg-white/10"
+          >
+            Settings
+          </Link>
+          <Link
+            href="/cron-jobs"
+            className="rounded-[var(--ck-radius-sm)] border border-white/10 bg-white/5 px-4 py-2 text-sm font-medium text-[color:var(--ck-text-primary)] shadow-[var(--ck-shadow-1)] transition-colors hover:bg-white/10"
+          >
+            Cron jobs
           </Link>
         </div>
       </div>
