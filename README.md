@@ -1,6 +1,6 @@
 # Claw Kitchen
 
-Local-first UI companion for **Clawcipes** (OpenClaw Recipes plugin).
+Local-first UI companion for **ClawRecipes** (OpenClaw Recipes plugin).
 
 Phase 1 focus:
 - list recipes (builtin + workspace)
@@ -9,7 +9,7 @@ Phase 1 focus:
 
 ## Prerequisites
 - OpenClaw installed and on PATH (`openclaw`)
-- Clawcipes plugin installed/linked so `openclaw recipes ...` works
+- ClawRecipes plugin installed/linked so `openclaw recipes ...` works
 
 ## Running locally
 ```bash

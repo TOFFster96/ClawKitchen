@@ -10,7 +10,7 @@ export default function Home() {
         </span>
       </h1>
       <p className="mt-3 max-w-prose text-[color:var(--ck-text-secondary)]">
-        Local-first UI for authoring Clawcipes recipes and scaffolding agents/teams.
+        Local-first UI for authoring ClawRecipes recipes and scaffolding agents/teams.
       </p>
 
       <div className="mt-6 flex flex-wrap gap-3">
