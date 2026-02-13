@@ -40,6 +40,8 @@ export default function TeamEditor({ teamId }: { teamId: string }) {
   const [fileContent, setFileContent] = useState<string>("");
   const [cronJobs, setCronJobs] = useState<unknown[]>([]);
   const [teamAgents, setTeamAgents] = useState<Array<{ id: string; identityName?: string }>>([]);
+  const [newRole, setNewRole] = useState<string>("");
+  const [newRoleName, setNewRoleName] = useState<string>("");
   const [skillsList, setSkillsList] = useState<string[]>([]);
 
   const teamRecipes = useMemo(
@@ -344,28 +346,111 @@ export default function TeamEditor({ teamId }: { teamId: string }) {
       {activeTab === "agents" ? (
         <div className="mt-6 ck-glass-strong p-4">
           <div className="text-sm font-medium text-[color:var(--ck-text-primary)]">Agents in this team</div>
-          <ul className="mt-3 space-y-2">
-            {teamAgents.length ? (
-              teamAgents.map((a) => (
-                <li key={a.id} className="flex items-center justify-between gap-3">
-                  <div className="min-w-0">
-                    <div className="truncate text-sm font-medium text-[color:var(--ck-text-primary)]">
-                      {a.identityName || a.id}
+          <p className="mt-2 text-sm text-[color:var(--ck-text-secondary)]">
+            Thin slice: manage agents by editing the <code>agents:</code> list in your custom team recipe (<code>{toId}</code>).
+          </p>
+
+          <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-3">
+            <div>
+              <label className="block text-xs font-medium text-[color:var(--ck-text-secondary)]">Role</label>
+              <input
+                value={newRole}
+                onChange={(e) => setNewRole(e.target.value)}
+                placeholder="lead"
+                className="mt-1 w-full rounded-[var(--ck-radius-sm)] border border-white/10 bg-black/25 px-3 py-2 text-sm text-[color:var(--ck-text-primary)]"
+              />
+            </div>
+            <div className="sm:col-span-2">
+              <label className="block text-xs font-medium text-[color:var(--ck-text-secondary)]">Name (optional)</label>
+              <input
+                value={newRoleName}
+                onChange={(e) => setNewRoleName(e.target.value)}
+                placeholder="Dev Team Lead"
+                className="mt-1 w-full rounded-[var(--ck-radius-sm)] border border-white/10 bg-black/25 px-3 py-2 text-sm text-[color:var(--ck-text-primary)]"
+              />
+            </div>
+          </div>
+
+          <div className="mt-3 flex flex-wrap gap-2">
+            <button
+              disabled={saving}
+              onClick={async () => {
+                setSaving(true);
+                setMessage("");
+                try {
+                  await ensureCustomRecipeExists(false);
+                  const res = await fetch("/api/recipes/team-agents", {
+                    method: "POST",
+                    headers: { "content-type": "application/json" },
+                    body: JSON.stringify({ recipeId: toId.trim(), op: "add", role: newRole, name: newRoleName }),
+                  });
+                  const json = await res.json();
+                  if (!res.ok || !json.ok) throw new Error(json.error || "Failed updating agents list");
+                  setContent(String(json.content ?? content));
+                  setMessage(`Updated agents list in ${toId}`);
+                } catch (e: unknown) {
+                  setMessage(e instanceof Error ? e.message : String(e));
+                } finally {
+                  setSaving(false);
+                }
+              }}
+              className="rounded-[var(--ck-radius-sm)] bg-[var(--ck-accent-red)] px-3 py-2 text-sm font-medium text-white shadow-[var(--ck-shadow-1)] disabled:opacity-50"
+            >
+              Add / Update role
+            </button>
+            <button
+              disabled={saving}
+              onClick={async () => {
+                setSaving(true);
+                setMessage("");
+                try {
+                  await ensureCustomRecipeExists(false);
+                  const res = await fetch("/api/recipes/team-agents", {
+                    method: "POST",
+                    headers: { "content-type": "application/json" },
+                    body: JSON.stringify({ recipeId: toId.trim(), op: "remove", role: newRole }),
+                  });
+                  const json = await res.json();
+                  if (!res.ok || !json.ok) throw new Error(json.error || "Failed updating agents list");
+                  setContent(String(json.content ?? content));
+                  setMessage(`Removed role ${newRole} from ${toId}`);
+                } catch (e: unknown) {
+                  setMessage(e instanceof Error ? e.message : String(e));
+                } finally {
+                  setSaving(false);
+                }
+              }}
+              className="rounded-[var(--ck-radius-sm)] border border-white/10 bg-white/5 px-3 py-2 text-sm font-medium text-[color:var(--ck-text-primary)] shadow-[var(--ck-shadow-1)] hover:bg-white/10 disabled:opacity-50"
+            >
+              Remove role
+            </button>
+          </div>
+
+          <div className="mt-6">
+            <div className="text-xs font-medium text-[color:var(--ck-text-secondary)]">Detected installed team agents (read-only)</div>
+            <ul className="mt-2 space-y-2">
+              {teamAgents.length ? (
+                teamAgents.map((a) => (
+                  <li key={a.id} className="flex items-center justify-between gap-3">
+                    <div className="min-w-0">
+                      <div className="truncate text-sm font-medium text-[color:var(--ck-text-primary)]">
+                        {a.identityName || a.id}
+                      </div>
+                      <div className="text-xs text-[color:var(--ck-text-secondary)]">{a.id}</div>
                     </div>
-                    <div className="text-xs text-[color:var(--ck-text-secondary)]">{a.id}</div>
-                  </div>
-                  <a
-                    className="text-sm font-medium text-[color:var(--ck-accent-red)] hover:text-[color:var(--ck-accent-red-hover)]"
-                    href={`/agents/${encodeURIComponent(a.id)}`}
-                  >
-                    Edit
-                  </a>
-                </li>
-              ))
-            ) : (
-              <li className="text-sm text-[color:var(--ck-text-secondary)]">No team agents detected.</li>
-            )}
-          </ul>
+                    <a
+                      className="text-sm font-medium text-[color:var(--ck-accent-red)] hover:text-[color:var(--ck-accent-red-hover)]"
+                      href={`/agents/${encodeURIComponent(a.id)}`}
+                    >
+                      Edit
+                    </a>
+                  </li>
+                ))
+              ) : (
+                <li className="text-sm text-[color:var(--ck-text-secondary)]">No team agents detected.</li>
+              )}
+            </ul>
+          </div>
         </div>
       ) : null}
 
