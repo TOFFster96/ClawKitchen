@@ -381,17 +381,70 @@ export default function TeamEditor({ teamId }: { teamId: string }) {
       {activeTab === "cron" ? (
         <div className="mt-6 ck-glass-strong p-4">
           <div className="text-sm font-medium text-[color:var(--ck-text-primary)]">Cron jobs (filtered by team name)</div>
-          <ul className="mt-3 space-y-2">
+          <ul className="mt-3 space-y-3">
             {cronJobs.length ? (
               cronJobs.map((j) => {
-                const job = j as { id?: unknown; jobId?: unknown; name?: unknown; enabled?: unknown; state?: { enabled?: unknown } };
-                const key = String(job.id ?? job.jobId ?? job.name ?? "job");
+                const job = j as {
+                  id?: unknown;
+                  jobId?: unknown;
+                  name?: unknown;
+                  enabled?: unknown;
+                  state?: { enabled?: unknown };
+                };
+                const id = String(job.id ?? job.jobId ?? "").trim();
+                const key = id || String(job.name ?? "job");
                 const label = String(job.name ?? job.id ?? job.jobId ?? "(unnamed)");
                 const enabled = job.enabled ?? job.state?.enabled;
+
+                async function act(action: "enable" | "disable" | "run") {
+                  setSaving(true);
+                  setMessage("");
+                  try {
+                    const res = await fetch("/api/cron/job", {
+                      method: "POST",
+                      headers: { "content-type": "application/json" },
+                      body: JSON.stringify({ id, action }),
+                    });
+                    const json = await res.json();
+                    if (!res.ok || !json.ok) throw new Error(json.error || "Cron action failed");
+                    setMessage(`Cron ${action}: ${label}`);
+                  } catch (e: unknown) {
+                    setMessage(e instanceof Error ? e.message : String(e));
+                  } finally {
+                    setSaving(false);
+                  }
+                }
+
                 return (
-                  <li key={key} className="text-sm text-[color:var(--ck-text-secondary)]">
+                  <li key={key} className="rounded-[var(--ck-radius-sm)] border border-white/10 bg-black/20 p-3">
                     <div className="font-medium text-[color:var(--ck-text-primary)]">{label}</div>
-                    <div className="text-xs">Enabled: {String(enabled ?? "?")}</div>
+                    <div className="mt-1 text-xs text-[color:var(--ck-text-secondary)]">Enabled: {String(enabled ?? "?")}</div>
+                    <div className="mt-2 flex flex-wrap gap-2">
+                      <button
+                        disabled={saving || !id}
+                        onClick={() => act("run")}
+                        className="rounded-[var(--ck-radius-sm)] border border-white/10 bg-white/5 px-2.5 py-1.5 text-xs font-medium text-[color:var(--ck-text-primary)] hover:bg-white/10 disabled:opacity-50"
+                      >
+                        Run
+                      </button>
+                      <button
+                        disabled={saving || !id}
+                        onClick={() => act("enable")}
+                        className="rounded-[var(--ck-radius-sm)] border border-white/10 bg-white/5 px-2.5 py-1.5 text-xs font-medium text-[color:var(--ck-text-primary)] hover:bg-white/10 disabled:opacity-50"
+                      >
+                        Enable
+                      </button>
+                      <button
+                        disabled={saving || !id}
+                        onClick={() => act("disable")}
+                        className="rounded-[var(--ck-radius-sm)] border border-white/10 bg-white/5 px-2.5 py-1.5 text-xs font-medium text-[color:var(--ck-text-primary)] hover:bg-white/10 disabled:opacity-50"
+                      >
+                        Disable
+                      </button>
+                      {!id ? (
+                        <div className="text-xs text-[color:var(--ck-text-tertiary)]">(missing id)</div>
+                      ) : null}
+                    </div>
                   </li>
                 );
               })
