@@ -15,7 +15,7 @@ const geistMono = Geist_Mono({
 
 export const metadata: Metadata = {
   title: "Claw Kitchen",
-  description: "Local-first UI for authoring Clawcipes recipes and scaffolding agents/teams.",
+  description: "Local-first UI for authoring ClawRecipes recipes and scaffolding agents/teams.",
 };
 
 export default function RootLayout({
