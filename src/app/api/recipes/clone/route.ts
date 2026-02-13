@@ -3,6 +3,7 @@ import path from "node:path";
 import YAML from "yaml";
 import { NextResponse } from "next/server";
 import { getWorkspaceRecipesDir } from "@/lib/paths";
+import { runOpenClaw } from "@/lib/openclaw";
 
 function updateFrontmatter(md: string, patch: Record<string, unknown>) {
   if (!md.startsWith("---\n")) throw new Error("Recipe markdown must start with YAML frontmatter (---)");
@@ -31,16 +32,17 @@ export async function POST(req: Request) {
   if (!fromId) return NextResponse.json({ ok: false, error: "Missing fromId" }, { status: 400 });
   if (!toId) return NextResponse.json({ ok: false, error: "Missing toId" }, { status: 400 });
 
-  // Load source markdown via existing API surface.
-  const shown = await fetch(`${new URL(req.url).origin}/api/recipes/${encodeURIComponent(fromId)}`, {
-    cache: "no-store",
-  });
-  const shownJson = (await shown.json()) as { recipe?: { content?: string } } & { error?: string };
-  if (!shown.ok) {
-    return NextResponse.json({ ok: false, error: shownJson.error || `Failed to load recipe: ${fromId}` }, { status: 400 });
+  // Load source markdown from OpenClaw CLI (no HTTP self-call; avoids dev-server deadlocks/timeouts).
+  let original = "";
+  try {
+    const { stdout } = await runOpenClaw(["recipes", "show", fromId]);
+    original = String(stdout ?? "");
+  } catch (e: unknown) {
+    return NextResponse.json(
+      { ok: false, error: e instanceof Error ? e.message : String(e) },
+      { status: 400 },
+    );
   }
-
-  const original = String(shownJson.recipe?.content ?? "");
   const next = updateFrontmatter(original, { id: toId, ...(toName ? { name: toName } : {}) });
 
   const dir = await getWorkspaceRecipesDir();
