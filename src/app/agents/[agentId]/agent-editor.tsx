@@ -71,7 +71,7 @@ export default function AgentEditor({ agentId }: { agentId: string }) {
       const res = await fetch("/api/agents/add", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ newAgentId, name, emoji, theme, avatar, model: agent.model }),
+        body: JSON.stringify({ newAgentId, name, emoji, theme, avatar, model: agent?.model }),
       });
       const json = await res.json();
       if (!res.ok) throw new Error(json.message || json.error || "Save As New failed");
