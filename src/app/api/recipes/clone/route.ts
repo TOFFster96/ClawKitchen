@@ -33,16 +33,20 @@ export async function POST(req: Request) {
   if (!toId) return NextResponse.json({ ok: false, error: "Missing toId" }, { status: 400 });
 
   // Load source markdown from OpenClaw CLI (no HTTP self-call; avoids dev-server deadlocks/timeouts).
-  let original = "";
-  try {
-    const { stdout } = await runOpenClaw(["recipes", "show", fromId]);
-    original = String(stdout ?? "");
-  } catch (e: unknown) {
+  const shown = await runOpenClaw(["recipes", "show", fromId]);
+  if (!shown.ok) {
     return NextResponse.json(
-      { ok: false, error: e instanceof Error ? e.message : String(e) },
+      {
+        ok: false,
+        error:
+          shown.stderr.trim() ||
+          `openclaw recipes show ${fromId} failed (exit=${shown.exitCode}). Is the recipes plugin enabled?`,
+      },
       { status: 400 },
     );
   }
+
+  const original = String(shown.stdout ?? "");
   const next = updateFrontmatter(original, { id: toId, ...(toName ? { name: toName } : {}) });
 
   const dir = await getWorkspaceRecipesDir();
