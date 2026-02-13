@@ -24,7 +24,24 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en">
+    <html lang="en" suppressHydrationWarning>
+      <head>
+        <script
+          // Apply theme before React hydration to avoid light→dark flash on navigation.
+          dangerouslySetInnerHTML={{
+            __html: `(() => {
+  try {
+    const key = "ck-theme";
+    const saved = window.localStorage.getItem(key);
+    const theme = saved === "dark" ? "dark" : "light";
+    document.documentElement.dataset.theme = theme;
+  } catch {
+    // ignore
+  }
+})();`,
+          }}
+        />
+      </head>
       <body className={`${geistSans.variable} ${geistMono.variable} antialiased`}>
         <AppShell>{children}</AppShell>
       </body>
