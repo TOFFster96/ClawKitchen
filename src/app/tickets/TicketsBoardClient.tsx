@@ -4,7 +4,7 @@ import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import type { TicketStage, TicketSummary } from "@/lib/tickets";
 
-type DoneRange = "all" | "today" | "this-week" | "this-month" | "last-month" | "custom";
+type DoneRange = "all" | "today" | "yesterday" | "this-week" | "this-month" | "last-month" | "custom";
 
 const STAGES: { key: TicketStage; label: string }[] = [
   { key: "backlog", label: "Backlog" },
@@ -82,6 +82,11 @@ export function TicketsBoardClient({ tickets }: { tickets: TicketSummary[] }) {
     if (doneRange === "today") {
       doneStart = startOfDay(now);
       doneEnd = endOfDay(now);
+    } else if (doneRange === "yesterday") {
+      const y = new Date(now);
+      y.setDate(y.getDate() - 1);
+      doneStart = startOfDay(y);
+      doneEnd = endOfDay(y);
     } else if (doneRange === "this-week") {
       doneStart = startOfWeek(now);
       doneEnd = endOfDay(now);
@@ -152,6 +157,7 @@ export function TicketsBoardClient({ tickets }: { tickets: TicketSummary[] }) {
             >
               <option value="all">All</option>
               <option value="today">Today</option>
+              <option value="yesterday">Yesterday</option>
               <option value="this-week">This week</option>
               <option value="this-month">This month</option>
               <option value="last-month">Last month</option>
