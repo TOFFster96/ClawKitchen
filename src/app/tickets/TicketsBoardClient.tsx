@@ -110,9 +110,9 @@ export function TicketsBoardClient({ tickets }: { tickets: TicketSummary[] }) {
     };
 
     for (const t of tickets) {
-      if (t.stage === "done" && doneStart && doneEnd) {
-        const doneAt = new Date(t.updatedAt);
-        if (doneAt < doneStart || doneAt > doneEnd) continue;
+      if (doneStart && doneEnd) {
+        const updatedAt = new Date(t.updatedAt);
+        if (updatedAt < doneStart || updatedAt > doneEnd) continue;
       }
       map[t.stage].push(t);
     }
@@ -144,7 +144,7 @@ export function TicketsBoardClient({ tickets }: { tickets: TicketSummary[] }) {
 
         <div className="flex flex-wrap items-center justify-end gap-2">
           <label className="flex items-center gap-2 text-xs text-[color:var(--ck-text-secondary)]">
-            Done filter
+            Updated filter
             <select
               className="rounded border border-[color:var(--ck-border-subtle)] bg-transparent px-2 py-1 text-xs"
               value={doneRange}
