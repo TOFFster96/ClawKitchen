@@ -4,6 +4,8 @@ import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import type { TicketStage, TicketSummary } from "@/lib/tickets";
 
+type DoneRange = "all" | "today" | "this-week" | "this-month" | "last-month" | "custom";
+
 const STAGES: { key: TicketStage; label: string }[] = [
   { key: "backlog", label: "Backlog" },
   { key: "in-progress", label: "In progress" },
@@ -17,24 +19,109 @@ function formatAge(hours: number) {
   return `${Math.round(hours / 24)}d`;
 }
 
+function startOfDay(d: Date) {
+  const x = new Date(d);
+  x.setHours(0, 0, 0, 0);
+  return x;
+}
+
+function endOfDay(d: Date) {
+  const x = new Date(d);
+  x.setHours(23, 59, 59, 999);
+  return x;
+}
+
+function startOfWeek(d: Date) {
+  // Monday-start week
+  const x = startOfDay(d);
+  const day = x.getDay(); // 0=Sun
+  const diff = (day === 0 ? -6 : 1) - day;
+  x.setDate(x.getDate() + diff);
+  return x;
+}
+
+function startOfMonth(d: Date) {
+  const x = startOfDay(d);
+  x.setDate(1);
+  return x;
+}
+
+function toDateInputValue(d: Date) {
+  // yyyy-mm-dd
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+
+function parseDateInputValue(v: string) {
+  // Treat as local date
+  const m = String(v || "").match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!m) return null;
+  const y = Number(m[1]);
+  const mo = Number(m[2]) - 1;
+  const day = Number(m[3]);
+  const d = new Date(y, mo, day);
+  if (Number.isNaN(d.getTime())) return null;
+  return d;
+}
+
 export function TicketsBoardClient({ tickets }: { tickets: TicketSummary[] }) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
 
+  const [doneRange, setDoneRange] = useState<DoneRange>("all");
+  const [doneCustomStart, setDoneCustomStart] = useState<string>(toDateInputValue(new Date()));
+  const [doneCustomEnd, setDoneCustomEnd] = useState<string>(toDateInputValue(new Date()));
+
   const byStage = useMemo(() => {
+    const now = new Date();
+
+    let doneStart: Date | null = null;
+    let doneEnd: Date | null = null;
+
+    if (doneRange === "today") {
+      doneStart = startOfDay(now);
+      doneEnd = endOfDay(now);
+    } else if (doneRange === "this-week") {
+      doneStart = startOfWeek(now);
+      doneEnd = endOfDay(now);
+    } else if (doneRange === "this-month") {
+      doneStart = startOfMonth(now);
+      doneEnd = endOfDay(now);
+    } else if (doneRange === "last-month") {
+      const s = startOfMonth(now);
+      s.setMonth(s.getMonth() - 1);
+      doneStart = s;
+      const e = startOfMonth(now);
+      e.setDate(0); // last day of previous month
+      doneEnd = endOfDay(e);
+    } else if (doneRange === "custom") {
+      const s = parseDateInputValue(doneCustomStart);
+      const e = parseDateInputValue(doneCustomEnd);
+      doneStart = s ? startOfDay(s) : null;
+      doneEnd = e ? endOfDay(e) : null;
+    }
+
     const map: Record<TicketStage, TicketSummary[]> = {
       backlog: [],
       "in-progress": [],
       testing: [],
       done: [],
     };
-    for (const t of tickets) map[t.stage].push(t);
+
+    for (const t of tickets) {
+      if (t.stage === "done" && doneStart && doneEnd) {
+        const doneAt = new Date(t.updatedAt);
+        if (doneAt < doneStart || doneAt > doneEnd) continue;
+      }
+      map[t.stage].push(t);
+    }
+
     for (const s of Object.keys(map) as TicketStage[]) {
       map[s].sort((a, b) => a.number - b.number);
     }
     return map;
-  }, [tickets]);
+  }, [tickets, doneRange, doneCustomStart, doneCustomEnd]);
 
   async function move(ticket: TicketSummary, to: TicketStage) {
     setError(null);
@@ -54,8 +141,43 @@ export function TicketsBoardClient({ tickets }: { tickets: TicketSummary[] }) {
     <div className="space-y-4">
       <div className="flex items-center justify-between gap-3">
         <h1 className="text-2xl font-semibold tracking-tight">Tickets</h1>
-        <div className="text-sm text-[color:var(--ck-text-secondary)]">
-          {isPending ? "Updating…" : ""}
+
+        <div className="flex flex-wrap items-center justify-end gap-2">
+          <label className="flex items-center gap-2 text-xs text-[color:var(--ck-text-secondary)]">
+            Done filter
+            <select
+              className="rounded border border-[color:var(--ck-border-subtle)] bg-transparent px-2 py-1 text-xs"
+              value={doneRange}
+              onChange={(e) => setDoneRange(e.target.value as DoneRange)}
+            >
+              <option value="all">All</option>
+              <option value="today">Today</option>
+              <option value="this-week">This week</option>
+              <option value="this-month">This month</option>
+              <option value="last-month">Last month</option>
+              <option value="custom">Custom</option>
+            </select>
+          </label>
+
+          {doneRange === "custom" ? (
+            <div className="flex items-center gap-2 text-xs text-[color:var(--ck-text-secondary)]">
+              <input
+                type="date"
+                value={doneCustomStart}
+                onChange={(e) => setDoneCustomStart(e.target.value)}
+                className="rounded border border-[color:var(--ck-border-subtle)] bg-transparent px-2 py-1 text-xs"
+              />
+              <span>→</span>
+              <input
+                type="date"
+                value={doneCustomEnd}
+                onChange={(e) => setDoneCustomEnd(e.target.value)}
+                className="rounded border border-[color:var(--ck-border-subtle)] bg-transparent px-2 py-1 text-xs"
+              />
+            </div>
+          ) : null}
+
+          <div className="text-sm text-[color:var(--ck-text-secondary)]">{isPending ? "Updating…" : ""}</div>
         </div>
       </div>
 
