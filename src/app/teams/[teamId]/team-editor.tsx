@@ -111,10 +111,11 @@ export default function TeamEditor({ teamId }: { teamId: string }) {
         let locked: { recipeId: string; recipeName?: string } | null = null;
         try {
           const metaJson = await metaRes.json();
-          if (metaRes.ok && metaJson.ok && metaJson.meta?.recipeId) {
+          if (metaRes.ok && metaJson.ok && metaJson.meta && (metaJson.meta as { recipeId?: unknown }).recipeId) {
+            const m = metaJson.meta as { recipeId?: unknown; recipeName?: unknown };
             locked = {
-              recipeId: String(metaJson.meta.recipeId),
-              recipeName: typeof metaJson.meta.recipeName === "string" ? metaJson.meta.recipeName : undefined,
+              recipeId: String(m.recipeId),
+              recipeName: typeof m.recipeName === "string" ? m.recipeName : undefined,
             };
           }
         } catch {
