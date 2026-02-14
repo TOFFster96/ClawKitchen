@@ -19,7 +19,7 @@ function inferTeamIdFromWorkspace(workspace: string | undefined) {
   return team || null;
 }
 
-export default function HomeClient({ agents }: { agents: AgentListItem[] }) {
+export default function HomeClient({ agents, teamNames }: { agents: AgentListItem[]; teamNames: Record<string, string> }) {
   const teamIds = useMemo(() => {
     const s = new Set<string>();
     for (const a of agents) {
@@ -50,13 +50,17 @@ export default function HomeClient({ agents }: { agents: AgentListItem[] }) {
       return a.localeCompare(b);
     });
 
-    return keys.map((k) => ({
-      key: k,
-      title: k === "personal" ? "Personal / Unassigned" : k,
-      agents: (groups.get(k) ?? []).slice().sort((a, b) => a.id.localeCompare(b.id)),
-      isTeam: k !== "personal",
-    }));
-  }, [agents, teamFilter]);
+    return keys.map((k) => {
+      const display = k === "personal" ? "Personal / Unassigned" : teamNames[k] || k;
+      return {
+        key: k,
+        title: display,
+        subtitle: k === "personal" ? null : k,
+        agents: (groups.get(k) ?? []).slice().sort((a, b) => a.id.localeCompare(b.id)),
+        isTeam: k !== "personal",
+      };
+    });
+  }, [agents, teamFilter, teamNames]);
 
   return (
     <div className="ck-glass mx-auto max-w-5xl p-6 sm:p-8">
@@ -116,7 +120,12 @@ export default function HomeClient({ agents }: { agents: AgentListItem[] }) {
         {grouped.map((g) => (
           <section key={g.key}>
             <div className="flex items-center justify-between gap-4">
-              <h2 className="text-lg font-semibold tracking-tight text-[color:var(--ck-text-primary)]">{g.title}</h2>
+              <div className="min-w-0">
+                <h2 className="truncate text-lg font-semibold tracking-tight text-[color:var(--ck-text-primary)]">{g.title}</h2>
+                {g.subtitle ? (
+                  <div className="mt-0.5 truncate text-xs text-[color:var(--ck-text-secondary)]">{g.subtitle}</div>
+                ) : null}
+              </div>
               {g.isTeam ? (
                 <Link
                   href={`/teams/${encodeURIComponent(g.key)}`}
