@@ -86,10 +86,27 @@ export default function TeamEditor({ teamId }: { teamId: string }) {
   const teamRecipes = useMemo(() => recipes.filter((r) => r.kind === "team"), [recipes]);
 
   const toRecipe = useMemo(() => recipes.find((r) => r.id === toId) ?? null, [recipes, toId]);
+  const targetExists = Boolean(toRecipe);
+
+  function titleCaseId(id: string) {
+    const s = id
+      .replace(/[-_]+/g, " ")
+      .replace(/\s+/g, " ")
+      .trim();
+    if (!s) return id;
+    return s
+      .split(" ")
+      .map((w) => {
+        if (/^(ai|api|cli|ui|ux|sre|qa|devops)$/i.test(w)) return w.toUpperCase();
+        return w.slice(0, 1).toUpperCase() + w.slice(1);
+      })
+      .join(" ");
+  }
 
   const teamIdValid = Boolean(teamId.trim());
   const targetIdValid = toId.trim().startsWith("custom-");
   const targetIsBuiltin = toRecipe?.source === "builtin";
+  const canEditTargetId = !targetExists;
 
   useEffect(() => {
     (async () => {
@@ -104,6 +121,11 @@ export default function TeamEditor({ teamId }: { teamId: string }) {
         const json = await recipesRes.json();
         const list = (json.recipes ?? []) as RecipeListItem[];
         setRecipes(list);
+
+        // If the target recipe already exists, treat it as "saved" (lock id) and load its name.
+        const existingCustom = list.find((r) => r.id === toId);
+        if (existingCustom?.name) setToName(existingCustom.name);
+        else if (toName === `Custom ${teamId}`) setToName(titleCaseId(teamId));
 
         // Prefer a recipe that corresponds to this teamId.
         // Primary source of truth: provenance stored in the team workspace.
@@ -192,7 +214,7 @@ export default function TeamEditor({ teamId }: { teamId: string }) {
         setLoading(false);
       }
     })();
-  }, [teamId]);
+  }, [teamId, toId, toName]);
 
   async function onLoadSource() {
     if (!fromId) return;
@@ -233,17 +255,32 @@ export default function TeamEditor({ teamId }: { teamId: string }) {
     flashMessage("");
     try {
       const json = await ensureCustomRecipeExists(overwrite);
-      setContent(json.content);
-      flashMessage(`Saved custom team recipe: ${json.filePath}`);
-      // After saving, take the user back to Home so they can re-enter Teams/Recipes
-      // and see the updated custom recipe list.
+
+      // If the user has edited the markdown, "Save (overwrite)" should persist both
+      // the updated name (frontmatter) and the edited markdown.
+      const hasEdits = Boolean(content.trim()) && content.trim() !== json.content.trim();
+
+      if (hasEdits) {
+        const nextContent = forceFrontmatterId(content, toId.trim());
+        const res = await fetch(`/api/recipes/${encodeURIComponent(toId.trim())}`, {
+          method: "PUT",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ content: nextContent }),
+        });
+        const putJson = await res.json();
+        if (!res.ok) throw new Error(putJson.error || "Save failed");
+        setContent(nextContent);
+      } else {
+        setContent(json.content);
+      }
+
+      // After first save, lock the chosen id by navigating Home and coming back.
+      flashMessage(`Saved team recipe: ${json.filePath}`);
       setTimeout(() => router.push("/"), 250);
     } catch (e: unknown) {
       const raw = e instanceof Error ? e.message : String(e);
       if (raw.includes("Refusing to overwrite existing recipe")) {
-        flashMessage(
-          `${raw}\n\nTip: that usually means the custom recipe already exists. Use “Save (overwrite)” or change the To id.`
-        );
+        flashMessage(`${raw}\n\nTip: that usually means the custom recipe already exists. Use “Save (overwrite)”.`);
       } else {
         flashMessage(raw);
       }
@@ -435,14 +472,15 @@ export default function TeamEditor({ teamId }: { teamId: string }) {
 
           <div className="ck-glass-strong p-4">
             <div className="text-sm font-medium text-[color:var(--ck-text-primary)]">Custom recipe target</div>
-            <label className="mt-3 block text-xs font-medium text-[color:var(--ck-text-secondary)]">To id</label>
+            <label className="mt-3 block text-xs font-medium text-[color:var(--ck-text-secondary)]">Team id</label>
             <input
               value={toId}
               onChange={(e) => setToId(e.target.value)}
-              className="mt-1 w-full rounded-[var(--ck-radius-sm)] border border-white/10 bg-black/25 px-3 py-2 text-sm text-[color:var(--ck-text-primary)]"
+              disabled={!canEditTargetId}
+              className="mt-1 w-full rounded-[var(--ck-radius-sm)] border border-white/10 bg-black/25 px-3 py-2 text-sm text-[color:var(--ck-text-primary)] disabled:opacity-70"
             />
 
-            <label className="mt-3 block text-xs font-medium text-[color:var(--ck-text-secondary)]">To name</label>
+            <label className="mt-3 block text-xs font-medium text-[color:var(--ck-text-secondary)]">Team name</label>
             <input
               value={toName}
               onChange={(e) => setToName(e.target.value)}
