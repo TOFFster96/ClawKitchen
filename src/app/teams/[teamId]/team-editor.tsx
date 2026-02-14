@@ -53,7 +53,7 @@ export default function TeamEditor({ teamId }: { teamId: string }) {
   const [lockedFromId, setLockedFromId] = useState<string | null>(null);
   const [lockedFromName, setLockedFromName] = useState<string | null>(null);
   const [provenanceMissing, setProvenanceMissing] = useState(false);
-  const [toId] = useState<string>(`custom-${teamId}`);
+  const [toId, setToId] = useState<string>(`custom-${teamId}`);
   const [toName, setToName] = useState<string>(`Custom ${teamId}`);
   const [content, setContent] = useState<string>("");
   const [activeTab, setActiveTab] = useState<"recipe" | "agents" | "skills" | "cron" | "files">("recipe");
@@ -86,6 +86,7 @@ export default function TeamEditor({ teamId }: { teamId: string }) {
   const teamRecipes = useMemo(() => recipes.filter((r) => r.kind === "team"), [recipes]);
 
   const toRecipe = useMemo(() => recipes.find((r) => r.id === toId) ?? null, [recipes, toId]);
+  const targetExists = Boolean(toRecipe);
 
   function titleCaseId(id: string) {
     const s = id
@@ -105,6 +106,7 @@ export default function TeamEditor({ teamId }: { teamId: string }) {
   const teamIdValid = Boolean(teamId.trim());
   const targetIdValid = toId.trim().startsWith("custom-");
   const targetIsBuiltin = toRecipe?.source === "builtin";
+  const canEditTargetId = !targetExists;
 
   useEffect(() => {
     (async () => {
@@ -120,7 +122,7 @@ export default function TeamEditor({ teamId }: { teamId: string }) {
         const list = (json.recipes ?? []) as RecipeListItem[];
         setRecipes(list);
 
-        // Set a friendlier default name for the team recipe if it already exists.
+        // If the target recipe already exists, treat it as "saved" (lock id) and load its name.
         const existingCustom = list.find((r) => r.id === toId);
         if (existingCustom?.name) setToName(existingCustom.name);
         else if (toName === `Custom ${teamId}`) setToName(titleCaseId(teamId));
@@ -272,6 +274,7 @@ export default function TeamEditor({ teamId }: { teamId: string }) {
         setContent(json.content);
       }
 
+      // After first save, lock the chosen id by navigating Home and coming back.
       flashMessage(`Saved team recipe: ${json.filePath}`);
       setTimeout(() => router.push("/"), 250);
     } catch (e: unknown) {
@@ -472,7 +475,8 @@ export default function TeamEditor({ teamId }: { teamId: string }) {
             <label className="mt-3 block text-xs font-medium text-[color:var(--ck-text-secondary)]">Team id</label>
             <input
               value={toId}
-              disabled
+              onChange={(e) => setToId(e.target.value)}
+              disabled={!canEditTargetId}
               className="mt-1 w-full rounded-[var(--ck-radius-sm)] border border-white/10 bg-black/25 px-3 py-2 text-sm text-[color:var(--ck-text-primary)] disabled:opacity-70"
             />
 
