@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
+import { CloneTeamModal } from "./CloneTeamModal";
 
 type RecipeListItem = {
   id: string;
@@ -52,6 +53,8 @@ export default function TeamEditor({ teamId }: { teamId: string }) {
   const [saving, setSaving] = useState(false);
   const [loadingSource, setLoadingSource] = useState(false);
   const [message, setMessage] = useState<string>("");
+
+  const [cloneOpen, setCloneOpen] = useState(false);
 
   function flashMessage(next: string) {
     setMessage(next);
@@ -260,16 +263,10 @@ export default function TeamEditor({ teamId }: { teamId: string }) {
         setContent(json.content);
       }
 
-      // After first save, lock the chosen id by navigating Home and coming back.
       flashMessage(`Saved team recipe: ${json.filePath}`);
-      setTimeout(() => router.push("/"), 250);
     } catch (e: unknown) {
       const raw = e instanceof Error ? e.message : String(e);
-      if (raw.includes("Refusing to overwrite existing recipe")) {
-        flashMessage(`${raw}\n\nTip: that usually means the custom recipe already exists. Use “Save (overwrite)”.`);
-      } else {
-        flashMessage(raw);
-      }
+      flashMessage(raw);
     } finally {
       setSaving(false);
     }
@@ -398,8 +395,10 @@ export default function TeamEditor({ teamId }: { teamId: string }) {
               </button>
 
               <button
-                disabled={saving || !teamIdValid || !targetIdValid || targetIsBuiltin}
-                onClick={() => onSaveCustom(false)}
+                disabled={saving || !teamIdValid || targetIsBuiltin}
+                onClick={() => {
+                  setCloneOpen(true);
+                }}
                 className="rounded-[var(--ck-radius-sm)] border border-white/10 bg-white/5 px-3 py-2 text-sm font-medium text-[color:var(--ck-text-primary)] shadow-[var(--ck-shadow-1)] transition-colors hover:bg-white/10 active:bg-white/15 disabled:opacity-50"
               >
                 Clone Team
@@ -756,6 +755,20 @@ export default function TeamEditor({ teamId }: { teamId: string }) {
           />
         </div>
       ) : null}
+
+      <CloneTeamModal
+        open={cloneOpen}
+        onClose={() => setCloneOpen(false)}
+        recipes={recipes}
+        onConfirm={async ({ id, name }) => {
+          setCloneOpen(false);
+          // Set the target fields, then execute the clone (create-only) save.
+          setToId(id);
+          setToName(name);
+          // Ensure we run after state updates apply.
+          setTimeout(() => onSaveCustom(false), 0);
+        }}
+      />
 
       {/* duplicate markdown editor removed */}
     </div>

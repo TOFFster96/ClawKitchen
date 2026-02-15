@@ -1,0 +1,118 @@
+"use client";
+
+import { useMemo, useState } from "react";
+
+type RecipeListItem = {
+  id: string;
+  name: string;
+  kind: "agent" | "team";
+  source: "builtin" | "workspace";
+};
+
+function slugifyId(input: string) {
+  return input
+    .toLowerCase()
+    .trim()
+    .replace(/['\u001f-\u007f]/g, "")
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .replace(/--+/g, "-");
+}
+
+export function CloneTeamModal({
+  open,
+  onClose,
+  recipes,
+  onConfirm,
+}: {
+  open: boolean;
+  onClose: () => void;
+  recipes: RecipeListItem[];
+  onConfirm: (args: { id: string; name: string }) => void;
+}) {
+  const [name, setName] = useState("");
+  const [id, setId] = useState("");
+  const [idTouched, setIdTouched] = useState(false);
+
+  const derivedId = useMemo(() => slugifyId(name), [name]);
+  const effectiveId = idTouched ? id : derivedId;
+
+  const availability = useMemo(() => {
+    const v = effectiveId.trim();
+    if (!v) return { state: "empty" as const, exists: false };
+    const exists = recipes.some((r) => r.id === v);
+    return { state: exists ? ("taken" as const) : ("available" as const), exists };
+  }, [effectiveId, recipes]);
+
+  if (!open) return null;
+
+  return (
+    <div className="fixed inset-0 z-50">
+      <div className="fixed inset-0 bg-black/60" onClick={onClose} />
+      <div className="fixed inset-0 overflow-y-auto">
+        <div className="flex min-h-full items-center justify-center p-4">
+          <div className="w-full max-w-lg rounded-2xl border border-white/10 bg-[color:var(--ck-bg-glass-strong)] p-5 shadow-[var(--ck-shadow-2)]">
+            <div className="text-lg font-semibold text-[color:var(--ck-text-primary)]">Clone Team</div>
+            <p className="mt-1 text-sm text-[color:var(--ck-text-secondary)]">
+              Enter a new team name and id. The id will be used as the new custom recipe id.
+            </p>
+
+            <label className="mt-4 block text-xs font-medium text-[color:var(--ck-text-secondary)]">New team name</label>
+            <input
+              value={name}
+              onChange={(e) => {
+                const next = e.target.value;
+                setName(next);
+                // initialize values on first edit
+                if (!idTouched && !id) {
+                  // keep id blank; effectiveId will derive live
+                }
+              }}
+              className="mt-1 w-full rounded-[var(--ck-radius-sm)] border border-white/10 bg-black/25 px-3 py-2 text-sm text-[color:var(--ck-text-primary)]"
+              placeholder="RockStar Seven Team"
+            />
+
+            <label className="mt-4 block text-xs font-medium text-[color:var(--ck-text-secondary)]">New team id</label>
+            <input
+              value={effectiveId}
+              onChange={(e) => {
+                setIdTouched(true);
+                setId(e.target.value);
+              }}
+              className={
+                "mt-1 w-full rounded-[var(--ck-radius-sm)] border bg-black/25 px-3 py-2 text-sm text-[color:var(--ck-text-primary)] " +
+                (availability.state === "available"
+                  ? "border-emerald-400/50"
+                  : availability.state === "taken"
+                    ? "border-red-400/60"
+                    : "border-white/10")
+              }
+              placeholder="rockstar-seven-team"
+            />
+            <div className="mt-1 text-xs text-[color:var(--ck-text-tertiary)]">
+              {availability.state === "taken" ? "That id is already taken." : availability.state === "available" ? "Id is available." : ""}
+            </div>
+
+            <div className="mt-6 flex items-center justify-end gap-2">
+              <button
+                type="button"
+                onClick={onClose}
+                className="rounded-[var(--ck-radius-sm)] border border-white/10 bg-white/5 px-3 py-2 text-sm font-medium text-[color:var(--ck-text-primary)] hover:bg-white/10"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={!name.trim() || !effectiveId.trim() || availability.state === "taken"}
+                onClick={() => onConfirm({ id: effectiveId.trim(), name: name.trim() })}
+                className="rounded-[var(--ck-radius-sm)] bg-[var(--ck-accent-red)] px-3 py-2 text-sm font-medium text-white shadow-[var(--ck-shadow-1)] hover:bg-[var(--ck-accent-red-hover)] disabled:opacity-50"
+              >
+                Clone
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
