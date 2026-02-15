@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { createPortal } from "react-dom";
 
 type RecipeListItem = {
   id: string;
@@ -46,8 +47,8 @@ export function CloneTeamModal({
 
   if (!open) return null;
 
-  return (
-    <div className="fixed inset-0 z-50">
+  return createPortal(
+    <div className="fixed inset-0 z-[200]">
       <div className="fixed inset-0 bg-black/60" onClick={onClose} />
       <div className="fixed inset-0 overflow-y-auto">
         <div className="flex min-h-full items-center justify-center p-4">
@@ -69,7 +70,6 @@ export function CloneTeamModal({
                 }
               }}
               className="mt-1 w-full rounded-[var(--ck-radius-sm)] border border-white/10 bg-black/25 px-3 py-2 text-sm text-[color:var(--ck-text-primary)]"
-              placeholder="RockStar Seven Team"
             />
 
             <label className="mt-4 block text-xs font-medium text-[color:var(--ck-text-secondary)]">New team id</label>
@@ -87,7 +87,6 @@ export function CloneTeamModal({
                     ? "border-red-400/60"
                     : "border-white/10")
               }
-              placeholder="rockstar-seven-team"
             />
             <div className="mt-1 text-xs text-[color:var(--ck-text-tertiary)]">
               {availability.state === "taken" ? "That id is already taken." : availability.state === "available" ? "Id is available." : ""}
@@ -114,5 +113,6 @@ export function CloneTeamModal({
         </div>
       </div>
     </div>
+  , document.body
   );
 }
