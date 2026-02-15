@@ -54,7 +54,7 @@ export default function TeamEditor({ teamId }: { teamId: string }) {
   const [lockedFromName, setLockedFromName] = useState<string | null>(null);
   const [provenanceMissing, setProvenanceMissing] = useState(false);
   const [toId, setToId] = useState<string>(teamId);
-  const [toName, setToName] = useState<string>(`Custom ${teamId}`);
+  const [toName, setToName] = useState<string>(teamId);
   const [content, setContent] = useState<string>("");
   const [activeTab, setActiveTab] = useState<"recipe" | "agents" | "skills" | "cron" | "files">("recipe");
   const [loading, setLoading] = useState(true);
@@ -90,14 +90,14 @@ export default function TeamEditor({ teamId }: { teamId: string }) {
   const teamIdValid = Boolean(teamId.trim());
   const targetIdValid = Boolean(toId.trim());
   const targetIsBuiltin = toRecipe?.source === "builtin";
-  // The "Team id" field is really the *custom recipe id* target.
+  // The "Recipe id" field is the workspace recipe id target.
   // It should be editable, and we must not auto-prefix/modify what the user types.
   const canEditTargetId = true;
 
   // Initialize defaults whenever we navigate to a new team.
   useEffect(() => {
     setToId(teamId);
-    setToName(`Custom ${teamId}`);
+    setToName(teamId);
   }, [teamId]);
 
   useEffect(() => {
