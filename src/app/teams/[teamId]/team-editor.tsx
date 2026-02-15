@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { CloneTeamModal } from "./CloneTeamModal";
+import { useToast } from "@/components/ToastProvider";
 
 type RecipeListItem = {
   id: string;
@@ -52,20 +53,14 @@ export default function TeamEditor({ teamId }: { teamId: string }) {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [loadingSource, setLoadingSource] = useState(false);
-  const [message, setMessage] = useState<string>("");
+  const toast = useToast();
 
   const [cloneOpen, setCloneOpen] = useState(false);
 
-  function flashMessage(next: string) {
-    setMessage(next);
-    // Keep feedback visible even if the user is mid-page.
-    try {
-      requestAnimationFrame(() => {
-        window.scrollTo({ top: 0, behavior: "smooth" });
-      });
-    } catch {
-      // ignore
-    }
+  function flashMessage(next: string, kind: "success" | "error" | "info" = "info") {
+    const msg = String(next ?? "").trim();
+    if (!msg) return;
+    toast.push({ kind, message: msg });
   }
 
   const [teamFiles, setTeamFiles] = useState<Array<{ name: string; missing: boolean; required: boolean; rationale?: string }>>([]);
@@ -98,7 +93,6 @@ export default function TeamEditor({ teamId }: { teamId: string }) {
   useEffect(() => {
     (async () => {
       setLoading(true);
-      setMessage("");
       try {
         const [recipesRes, metaRes] = await Promise.all([
           fetch("/api/recipes", { cache: "no-store" }),
@@ -199,6 +193,7 @@ export default function TeamEditor({ teamId }: { teamId: string }) {
         setLoading(false);
       }
     })();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [teamId]);
 
   async function onLoadTeamRecipeMarkdown() {
@@ -319,12 +314,6 @@ export default function TeamEditor({ teamId }: { teamId: string }) {
         Phase v2 (thin slice): bootstrap a <strong>custom team recipe</strong> for this installed team, without
         modifying builtin recipes.
       </p>
-
-      {message ? (
-        <div className="mt-4 rounded-[var(--ck-radius-sm)] border border-white/10 bg-black/20 p-3 text-sm text-[color:var(--ck-text-primary)]">
-          {message}
-        </div>
-      ) : null}
 
       <div className="mt-6 flex flex-wrap gap-2">
         {(
@@ -515,8 +504,7 @@ export default function TeamEditor({ teamId }: { teamId: string }) {
               disabled={saving}
               onClick={async () => {
                 setSaving(true);
-                setMessage("");
-                try {
+                                try {
                   await ensureCustomRecipeExists(false);
                   const res = await fetch("/api/recipes/team-agents", {
                     method: "POST",
@@ -526,9 +514,9 @@ export default function TeamEditor({ teamId }: { teamId: string }) {
                   const json = await res.json();
                   if (!res.ok || !json.ok) throw new Error(json.error || "Failed updating agents list");
                   setContent(String(json.content ?? content));
-                  setMessage(`Updated agents list in ${toId}`);
+                  flashMessage(`Updated agents list in ${toId}`, "success");
                 } catch (e: unknown) {
-                  setMessage(e instanceof Error ? e.message : String(e));
+                  flashMessage(e instanceof Error ? e.message : String(e), "error");
                 } finally {
                   setSaving(false);
                 }
@@ -541,8 +529,7 @@ export default function TeamEditor({ teamId }: { teamId: string }) {
               disabled={saving}
               onClick={async () => {
                 setSaving(true);
-                setMessage("");
-                try {
+                                try {
                   await ensureCustomRecipeExists(false);
                   const res = await fetch("/api/recipes/team-agents", {
                     method: "POST",
@@ -552,9 +539,9 @@ export default function TeamEditor({ teamId }: { teamId: string }) {
                   const json = await res.json();
                   if (!res.ok || !json.ok) throw new Error(json.error || "Failed updating agents list");
                   setContent(String(json.content ?? content));
-                  setMessage(`Removed role ${newRole} from ${toId}`);
+                  flashMessage(`Removed role ${newRole} from ${toId}`, "success");
                 } catch (e: unknown) {
-                  setMessage(e instanceof Error ? e.message : String(e));
+                  flashMessage(e instanceof Error ? e.message : String(e), "error");
                 } finally {
                   setSaving(false);
                 }
@@ -622,8 +609,7 @@ export default function TeamEditor({ teamId }: { teamId: string }) {
 
                 async function act(action: "enable" | "disable" | "run") {
                   setSaving(true);
-                  setMessage("");
-                  try {
+                                    try {
                     const res = await fetch("/api/cron/job", {
                       method: "POST",
                       headers: { "content-type": "application/json" },
@@ -631,9 +617,9 @@ export default function TeamEditor({ teamId }: { teamId: string }) {
                     });
                     const json = await res.json();
                     if (!res.ok || !json.ok) throw new Error(json.error || "Cron action failed");
-                    setMessage(`Cron ${action}: ${label}`);
+                    flashMessage(`Cron ${action}: ${label}`, "success");
                   } catch (e: unknown) {
-                    setMessage(e instanceof Error ? e.message : String(e));
+                    flashMessage(e instanceof Error ? e.message : String(e), "error");
                   } finally {
                     setSaving(false);
                   }
