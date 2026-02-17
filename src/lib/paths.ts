@@ -16,11 +16,21 @@ export async function readOpenClawConfig(): Promise<OpenClawConfig> {
   return JSON.parse(text) as OpenClawConfig;
 }
 
-export async function getWorkspaceRecipesDir() {
+export async function getWorkspaceDir() {
   const cfg = await readOpenClawConfig();
   const ws = cfg.agents?.defaults?.workspace;
   if (!ws) throw new Error("agents.defaults.workspace is not set in ~/.openclaw/openclaw.json");
+  return ws;
+}
+
+export async function getWorkspaceRecipesDir() {
+  const ws = await getWorkspaceDir();
   return path.join(ws, "recipes");
+}
+
+export async function getWorkspaceGoalsDir() {
+  const ws = await getWorkspaceDir();
+  return path.join(ws, "notes", "goals");
 }
 
 export async function getBuiltinRecipesDir() {
