@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { createPortal } from "react-dom";
 import { useEffect, useMemo, useState } from "react";
 
 type GoalStatus = "planned" | "active" | "done";
@@ -15,11 +16,74 @@ type Goal = {
   updatedAt: string;
 };
 
+function DeleteGoalModal({
+  open,
+  goalId,
+  onClose,
+  onConfirm,
+  busy,
+  error,
+}: {
+  open: boolean;
+  goalId: string;
+  busy?: boolean;
+  error?: string | null;
+  onClose: () => void;
+  onConfirm: () => void;
+}) {
+  if (!open) return null;
+
+  return createPortal(
+    <div className="fixed inset-0 z-[200]">
+      <div className="fixed inset-0 bg-black/60" onClick={onClose} />
+      <div className="fixed inset-0 overflow-y-auto">
+        <div className="flex min-h-full items-center justify-center p-4">
+          <div className="w-full max-w-lg rounded-2xl border border-white/10 bg-[color:var(--ck-bg-glass-strong)] p-5 shadow-[var(--ck-shadow-2)]">
+            <div className="text-lg font-semibold text-[color:var(--ck-text-primary)]">Delete goal</div>
+            <p className="mt-2 text-sm text-[color:var(--ck-text-secondary)]">
+              Delete goal <code className="font-mono">{goalId}</code>? This removes the markdown file from your workspace.
+            </p>
+
+            {error ? (
+              <div className="mt-4 rounded-[var(--ck-radius-sm)] border border-red-400/30 bg-red-500/10 p-3 text-sm text-red-100">
+                {error}
+              </div>
+            ) : null}
+
+            <div className="mt-6 flex items-center justify-end gap-2">
+              <button
+                type="button"
+                onClick={onClose}
+                className="rounded-[var(--ck-radius-sm)] border border-white/10 bg-white/5 px-3 py-2 text-sm font-medium text-[color:var(--ck-text-primary)] hover:bg-white/10"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={busy}
+                onClick={onConfirm}
+                className="rounded-[var(--ck-radius-sm)] bg-[var(--ck-accent-red)] px-3 py-2 text-sm font-medium text-white shadow-[var(--ck-shadow-1)] hover:bg-[var(--ck-accent-red-hover)] disabled:opacity-50"
+              >
+                {busy ? "Deleting…" : "Delete"}
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>,
+    document.body,
+  );
+}
+
 export default function GoalEditor({ goalId }: { goalId: string }) {
   const router = useRouter();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [deleteBusy, setDeleteBusy] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
 
   const [title, setTitle] = useState("");
   const [status, setStatus] = useState<GoalStatus>("planned");
@@ -134,20 +198,19 @@ export default function GoalEditor({ goalId }: { goalId: string }) {
     setSaving(false);
   }
 
-  async function deleteThisGoal() {
-    const ok = window.confirm(`Delete goal \"${goalId}\"? This will delete the markdown file.`);
-    if (!ok) return;
+  async function confirmDelete() {
+    setDeleteBusy(true);
+    setDeleteError(null);
 
-    setSaving(true);
-    setError(null);
     const res = await fetch(`/api/goals/${encodeURIComponent(goalId)}`, { method: "DELETE" });
     const data = await res.json();
     if (!res.ok) {
-      setError(data?.error ?? "Failed to delete");
-      setSaving(false);
+      setDeleteError(data?.error ?? "Failed to delete");
+      setDeleteBusy(false);
       return;
     }
 
+    setDeleteOpen(false);
     router.push("/goals");
   }
 
@@ -244,7 +307,10 @@ export default function GoalEditor({ goalId }: { goalId: string }) {
             Promote to inbox
           </button>
           <button
-            onClick={() => void deleteThisGoal()}
+            onClick={() => {
+              setDeleteError(null);
+              setDeleteOpen(true);
+            }}
             disabled={saving || loading}
             className="rounded-[var(--ck-radius-sm)] border border-red-500/40 px-3 py-2 text-sm font-medium text-red-200"
           >
@@ -257,6 +323,15 @@ export default function GoalEditor({ goalId }: { goalId: string }) {
         <div className="text-sm font-medium">Preview</div>
         <pre className="mt-2 whitespace-pre-wrap break-words text-sm leading-6 text-[color:var(--ck-text-primary)]">{body}</pre>
       </div>
+
+      <DeleteGoalModal
+        open={deleteOpen}
+        goalId={goalId}
+        busy={deleteBusy}
+        error={deleteError}
+        onClose={() => setDeleteOpen(false)}
+        onConfirm={() => void confirmDelete()}
+      />
 
       {loading ? <div className="text-sm text-[color:var(--ck-text-secondary)]">Loading…</div> : null}
     </div>
