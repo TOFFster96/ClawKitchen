@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { readGoal, writeGoal } from "@/lib/goals";
+import { deleteGoal, readGoal, writeGoal } from "@/lib/goals";
 
 export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> }) {
   const { id } = await ctx.params;
@@ -39,6 +39,19 @@ export async function PUT(req: Request, ctx: { params: Promise<{ id: string }> }
     });
 
     return NextResponse.json({ goal: result.frontmatter });
+  } catch (e: unknown) {
+    const msg = e instanceof Error ? e.message : String(e);
+    const status = /Invalid goal id|Path traversal/.test(msg) ? 400 : 500;
+    return NextResponse.json({ error: msg }, { status });
+  }
+}
+
+export async function DELETE(_req: Request, ctx: { params: Promise<{ id: string }> }) {
+  const { id } = await ctx.params;
+  try {
+    const result = await deleteGoal(id);
+    if (!result.ok) return NextResponse.json({ error: "Not found" }, { status: 404 });
+    return NextResponse.json({ ok: true });
   } catch (e: unknown) {
     const msg = e instanceof Error ? e.message : String(e);
     const status = /Invalid goal id|Path traversal/.test(msg) ? 400 : 500;

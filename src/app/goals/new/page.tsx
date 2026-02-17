@@ -1,31 +1,65 @@
 "use client";
 
-import { useState } from "react";
-import { useRouter } from "next/navigation";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { useMemo, useState } from "react";
+
+type GoalStatus = "planned" | "active" | "done";
+
+function slugify(input: string) {
+  return input
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9\s-]/g, "")
+    .replace(/[\s_-]+/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 64);
+}
 
 export default function NewGoalPage() {
   const router = useRouter();
+
   const [id, setId] = useState("");
   const [title, setTitle] = useState("");
+  const [status, setStatus] = useState<GoalStatus>("planned");
+  const [tagsRaw, setTagsRaw] = useState("");
+  const [teamsRaw, setTeamsRaw] = useState("");
+  const [body, setBody] = useState(
+    "## Workflow\n<!-- goal-workflow -->\n- Use **Promote to inbox** to send this goal to the development-team inbox for scoping.\n- When promoted, set goal status to **active**.\n- Track implementation work via tickets (add links/IDs under a **Tickets** section in this goal).\n- When development is complete (all associated tickets marked done), set goal status to **done**.\n\n## Tickets\n- (add ticket links/ids)\n"
+  );
+
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+
+  const tags = useMemo(() => tagsRaw.split(",").map((s) => s.trim()).filter(Boolean), [tagsRaw]);
+  const teams = useMemo(() => teamsRaw.split(",").map((s) => s.trim()).filter(Boolean), [teamsRaw]);
+
+  const suggestedId = useMemo(() => {
+    const s = slugify(title);
+    return s.length >= 2 ? s : "";
+  }, [title]);
 
   async function create() {
     setSaving(true);
     setError(null);
+
+    const finalId = id.trim();
+
     const res = await fetch("/api/goals", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ id, title, status: "planned", tags: [], teams: [], body: "" }),
+      body: JSON.stringify({ id: finalId, title, status, tags, teams, body }),
     });
+
     const data = await res.json();
     if (!res.ok) {
       setError(data?.error ?? "Failed to create goal");
       setSaving(false);
       return;
     }
-    router.push(`/goals/${encodeURIComponent(id)}`);
+
+    router.push(`/goals/${encodeURIComponent(finalId)}`);
   }
 
   return (
@@ -47,6 +81,14 @@ export default function NewGoalPage() {
           />
           <div className="mt-1 text-xs text-[color:var(--ck-text-tertiary)]">
             Lowercase letters, numbers, hyphens. Stored as <code className="font-mono">{id || "<id>"}.md</code>.
+            {suggestedId && !id.trim() ? (
+              <>
+                {" "}Suggested:{" "}
+                <button className="underline" onClick={() => setId(suggestedId)}>
+                  {suggestedId}
+                </button>
+              </>
+            ) : null}
           </div>
         </div>
 
@@ -57,6 +99,49 @@ export default function NewGoalPage() {
             value={title}
             onChange={(e) => setTitle(e.target.value)}
             placeholder="Increase trial activation"
+          />
+        </div>
+
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+          <div>
+            <div className="text-xs text-[color:var(--ck-text-tertiary)]">Status</div>
+            <select
+              className="mt-1 w-full rounded-[var(--ck-radius-sm)] border border-[color:var(--ck-border-subtle)] bg-transparent px-3 py-2 text-sm"
+              value={status}
+              onChange={(e) => setStatus(e.target.value as GoalStatus)}
+            >
+              <option value="planned">Planned</option>
+              <option value="active">Active</option>
+              <option value="done">Done</option>
+            </select>
+          </div>
+          <div>
+            <div className="text-xs text-[color:var(--ck-text-tertiary)]">Teams (comma-separated)</div>
+            <input
+              className="mt-1 w-full rounded-[var(--ck-radius-sm)] border border-[color:var(--ck-border-subtle)] bg-transparent px-3 py-2 text-sm"
+              value={teamsRaw}
+              onChange={(e) => setTeamsRaw(e.target.value)}
+              placeholder="development-team, marketing-team"
+            />
+          </div>
+          <div>
+            <div className="text-xs text-[color:var(--ck-text-tertiary)]">Tags (comma-separated)</div>
+            <input
+              className="mt-1 w-full rounded-[var(--ck-radius-sm)] border border-[color:var(--ck-border-subtle)] bg-transparent px-3 py-2 text-sm"
+              value={tagsRaw}
+              onChange={(e) => setTagsRaw(e.target.value)}
+              placeholder="onboarding, growth"
+            />
+          </div>
+        </div>
+
+        <div>
+          <div className="text-xs text-[color:var(--ck-text-tertiary)]">Body (markdown)</div>
+          <textarea
+            className="mt-1 h-[260px] w-full rounded-[var(--ck-radius-sm)] border border-[color:var(--ck-border-subtle)] bg-transparent px-3 py-2 font-mono text-sm"
+            value={body}
+            onChange={(e) => setBody(e.target.value)}
+            placeholder="Write the goal here…"
           />
         </div>
 

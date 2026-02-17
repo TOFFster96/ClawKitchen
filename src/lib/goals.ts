@@ -137,3 +137,16 @@ export async function writeGoal(params: {
   await fs.writeFile(full, raw, "utf8");
   return { frontmatter: fm, raw };
 }
+
+export async function deleteGoal(id: string): Promise<{ ok: true } | { ok: false; reason: "not_found" }> {
+  const { full } = await goalPathForId(id);
+  try {
+    await fs.unlink(full);
+    return { ok: true };
+  } catch (e: unknown) {
+    if (typeof e === "object" && e && (e as { code?: string }).code === "ENOENT") {
+      return { ok: false, reason: "not_found" };
+    }
+    throw e;
+  }
+}

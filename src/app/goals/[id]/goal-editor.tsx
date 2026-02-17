@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 
 type GoalStatus = "planned" | "active" | "done";
@@ -15,6 +16,7 @@ type Goal = {
 };
 
 export default function GoalEditor({ goalId }: { goalId: string }) {
+  const router = useRouter();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -113,6 +115,42 @@ export default function GoalEditor({ goalId }: { goalId: string }) {
     setSaving(false);
   }
 
+  async function promoteToInbox() {
+    setSaving(true);
+    setError(null);
+    const res = await fetch(`/api/goals/${encodeURIComponent(goalId)}/promote`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({}),
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      setError(data?.error ?? "Failed to promote");
+      setSaving(false);
+      return;
+    }
+
+    await reload();
+    setSaving(false);
+  }
+
+  async function deleteThisGoal() {
+    const ok = window.confirm(`Delete goal \"${goalId}\"? This will delete the markdown file.`);
+    if (!ok) return;
+
+    setSaving(true);
+    setError(null);
+    const res = await fetch(`/api/goals/${encodeURIComponent(goalId)}`, { method: "DELETE" });
+    const data = await res.json();
+    if (!res.ok) {
+      setError(data?.error ?? "Failed to delete");
+      setSaving(false);
+      return;
+    }
+
+    router.push("/goals");
+  }
+
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between gap-3">
@@ -183,7 +221,7 @@ export default function GoalEditor({ goalId }: { goalId: string }) {
 
         {error ? <div className="text-sm text-red-300">{error}</div> : null}
 
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-3">
           <button
             onClick={() => void save()}
             disabled={saving || loading}
@@ -197,6 +235,20 @@ export default function GoalEditor({ goalId }: { goalId: string }) {
             className="rounded-[var(--ck-radius-sm)] border border-[color:var(--ck-border-subtle)] px-3 py-2 text-sm"
           >
             Reload
+          </button>
+          <button
+            onClick={() => void promoteToInbox()}
+            disabled={saving || loading}
+            className="rounded-[var(--ck-radius-sm)] border border-[color:var(--ck-border-subtle)] px-3 py-2 text-sm font-medium"
+          >
+            Promote to inbox
+          </button>
+          <button
+            onClick={() => void deleteThisGoal()}
+            disabled={saving || loading}
+            className="rounded-[var(--ck-radius-sm)] border border-red-500/40 px-3 py-2 text-sm font-medium text-red-200"
+          >
+            Delete
           </button>
         </div>
       </div>

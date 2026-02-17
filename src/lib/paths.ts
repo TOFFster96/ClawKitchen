@@ -4,6 +4,12 @@ import path from "node:path";
 type OpenClawConfig = {
   agents?: { defaults?: { workspace?: string } };
   gateway?: { port?: number; auth?: { token?: string } };
+  tools?: {
+    agentToAgent?: {
+      enabled?: boolean;
+      allow?: string[];
+    };
+  };
   plugins?: {
     installs?: { recipes?: { installPath?: string; sourcePath?: string } };
     load?: { paths?: string[] };
@@ -31,6 +37,12 @@ export async function getWorkspaceRecipesDir() {
 export async function getWorkspaceGoalsDir() {
   const ws = await getWorkspaceDir();
   return path.join(ws, "notes", "goals");
+}
+
+export async function getTeamWorkspaceDir(teamId: string) {
+  const home = process.env.HOME || "";
+  if (!home) throw new Error("HOME is not set");
+  return path.join(home, ".openclaw", `workspace-${teamId}`);
 }
 
 export async function getBuiltinRecipesDir() {
