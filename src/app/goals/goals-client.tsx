@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 
 type Goal = {
@@ -23,6 +24,9 @@ function Badge({ children }: { children: React.ReactNode }) {
 export default function GoalsClient() {
   const [goals, setGoals] = useState<Goal[] | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  const searchParams = useSearchParams();
+  const teamFilter = (searchParams.get("team") ?? "").trim();
 
   const [filterStatus, setFilterStatus] = useState<string>("all");
 
@@ -75,10 +79,11 @@ export default function GoalsClient() {
   }
 
   const filtered = useMemo(() => {
-    const list = goals ?? [];
+    let list = goals ?? [];
+    if (teamFilter) list = list.filter((g) => Array.isArray(g.teams) && g.teams.includes(teamFilter));
     if (filterStatus === "all") return list;
     return list.filter((g) => g.status === filterStatus);
-  }, [goals, filterStatus]);
+  }, [goals, filterStatus, teamFilter]);
 
   return (
     <div className="space-y-6">
@@ -87,6 +92,11 @@ export default function GoalsClient() {
           <h1 className="text-2xl font-semibold tracking-tight">Goals</h1>
           <p className="mt-1 text-sm text-[color:var(--ck-text-secondary)]">
             Stored in <code className="font-mono">~/.openclaw/workspace/notes/goals/</code>
+            {teamFilter ? (
+              <>
+                {" "}• filtered by team <code className="font-mono">{teamFilter}</code>
+              </>
+            ) : null}
           </p>
         </div>
         <Link
