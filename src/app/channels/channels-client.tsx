@@ -1,5 +1,6 @@
 "use client";
 
+import { createPortal } from "react-dom";
 import { useEffect, useMemo, useState } from "react";
 
 type ChannelConfig = Record<string, unknown>;
@@ -39,6 +40,130 @@ function Button({
   );
 }
 
+function DeleteBindingModal({
+  open,
+  provider,
+  busy,
+  error,
+  onClose,
+  onConfirm,
+}: {
+  open: boolean;
+  provider: string;
+  busy?: boolean;
+  error?: string | null;
+  onClose: () => void;
+  onConfirm: () => void;
+}) {
+  if (!open) return null;
+
+  return createPortal(
+    <div className="fixed inset-0 z-[200]">
+      <div className="fixed inset-0 bg-black/60" onClick={onClose} />
+      <div className="fixed inset-0 overflow-y-auto">
+        <div className="flex min-h-full items-center justify-center p-4">
+          <div className="w-full max-w-lg rounded-2xl border border-white/10 bg-[color:var(--ck-bg-glass-strong)] p-5 shadow-[var(--ck-shadow-2)]">
+            <div className="text-lg font-semibold text-[color:var(--ck-text-primary)]">Delete binding</div>
+            <p className="mt-2 text-sm text-[color:var(--ck-text-secondary)]">
+              Delete channel binding <code className="font-mono">{provider}</code>?
+            </p>
+
+            {error ? (
+              <div className="mt-4 rounded-[var(--ck-radius-sm)] border border-red-400/30 bg-red-500/10 p-3 text-sm text-red-100">
+                {error}
+              </div>
+            ) : null}
+
+            <div className="mt-6 flex items-center justify-end gap-2">
+              <button
+                type="button"
+                onClick={onClose}
+                className="rounded-[var(--ck-radius-sm)] border border-white/10 bg-white/5 px-3 py-2 text-sm font-medium text-[color:var(--ck-text-primary)] hover:bg-white/10"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={busy}
+                onClick={onConfirm}
+                className="rounded-[var(--ck-radius-sm)] bg-[var(--ck-accent-red)] px-3 py-2 text-sm font-medium text-white shadow-[var(--ck-shadow-1)] hover:bg-[var(--ck-accent-red-hover)] disabled:opacity-50"
+              >
+                {busy ? "Deleting…" : "Delete"}
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>,
+    document.body,
+  );
+}
+
+function AddBindingModal({
+  open,
+  value,
+  error,
+  onClose,
+  onChange,
+  onConfirm,
+}: {
+  open: boolean;
+  value: string;
+  error?: string | null;
+  onClose: () => void;
+  onChange: (v: string) => void;
+  onConfirm: () => void;
+}) {
+  if (!open) return null;
+
+  return createPortal(
+    <div className="fixed inset-0 z-[200]">
+      <div className="fixed inset-0 bg-black/60" onClick={onClose} />
+      <div className="fixed inset-0 overflow-y-auto">
+        <div className="flex min-h-full items-center justify-center p-4">
+          <div className="w-full max-w-lg rounded-2xl border border-white/10 bg-[color:var(--ck-bg-glass-strong)] p-5 shadow-[var(--ck-shadow-2)]">
+            <div className="text-lg font-semibold text-[color:var(--ck-text-primary)]">Add binding</div>
+            <p className="mt-2 text-sm text-[color:var(--ck-text-secondary)]">
+              Enter the provider id (e.g. <code className="font-mono">telegram</code>, <code className="font-mono">whatsapp</code>).
+            </p>
+
+            <label className="mt-4 block text-xs font-medium text-[color:var(--ck-text-secondary)]">Provider id</label>
+            <input
+              value={value}
+              onChange={(e) => onChange(e.target.value)}
+              className="mt-1 w-full rounded-[var(--ck-radius-sm)] border border-white/10 bg-black/25 px-3 py-2 text-sm text-[color:var(--ck-text-primary)] font-mono"
+              placeholder="telegram"
+            />
+
+            {error ? (
+              <div className="mt-3 text-sm text-red-200">{error}</div>
+            ) : null}
+
+            <div className="mt-6 flex items-center justify-end gap-2">
+              <button
+                type="button"
+                onClick={onClose}
+                className="rounded-[var(--ck-radius-sm)] border border-white/10 bg-white/5 px-3 py-2 text-sm font-medium text-[color:var(--ck-text-primary)] hover:bg-white/10"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={!value.trim()}
+                onClick={onConfirm}
+                className="rounded-[var(--ck-radius-sm)] bg-[var(--ck-accent-red)] px-3 py-2 text-sm font-medium text-white shadow-[var(--ck-shadow-1)] hover:bg-[var(--ck-accent-red-hover)] disabled:opacity-50"
+              >
+                Add
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>,
+    document.body,
+  );
+}
+
 export default function ChannelsClient() {
   const [channels, setChannels] = useState<Record<string, unknown>>({});
   const [loading, setLoading] = useState(true);
@@ -47,6 +172,14 @@ export default function ChannelsClient() {
   const [provider, setProvider] = useState<string>("telegram");
   const [configJson, setConfigJson] = useState<string>("{\n  \"enabled\": true\n}\n");
   const [saving, setSaving] = useState(false);
+
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [deleteBusy, setDeleteBusy] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+
+  const [addOpen, setAddOpen] = useState(false);
+  const [addProviderId, setAddProviderId] = useState("telegram");
+  const [addError, setAddError] = useState<string | null>(null);
 
   async function fetchBindings(): Promise<{ ok: true; channels: Record<string, unknown> } | { ok: false; error: string }> {
     const res = await fetch("/api/channels/bindings", { cache: "no-store" });
@@ -137,12 +270,9 @@ export default function ChannelsClient() {
     setSaving(false);
   }
 
-  async function remove(p: string) {
-    const ok = window.confirm(`Delete channel binding "${p}"?`);
-    if (!ok) return;
-
-    setSaving(true);
-    setError(null);
+  async function doDelete(p: string) {
+    setDeleteBusy(true);
+    setDeleteError(null);
 
     const res = await fetch("/api/channels/bindings", {
       method: "DELETE",
@@ -151,21 +281,34 @@ export default function ChannelsClient() {
     });
     const data = (await res.json()) as ChannelsResponse;
     if (!res.ok || !data?.ok) {
-      setError(String(data?.error ?? "Failed to delete"));
-      setSaving(false);
+      setDeleteError(String(data?.error ?? "Failed to delete"));
+      setDeleteBusy(false);
       return;
     }
 
+    setDeleteOpen(false);
     await refresh();
-    setSaving(false);
+    setDeleteBusy(false);
   }
 
-  function addBinding() {
-    const p = window.prompt("Provider id (e.g. telegram)", "telegram");
-    const next = String(p ?? "").trim();
+  function openAddBinding() {
+    setAddError(null);
+    setAddProviderId("telegram");
+    setAddOpen(true);
+  }
+
+  function confirmAddBinding() {
+    const next = addProviderId.trim();
     if (!next) return;
+
+    if (!/^[-a-z0-9_.]+$/i.test(next)) {
+      setAddError("Provider id contains invalid characters");
+      return;
+    }
+
     setProvider(next);
     setConfigJson("{\n  \"enabled\": true\n}\n");
+    setAddOpen(false);
   }
 
   const selectedConfig = useMemo(() => {
@@ -174,6 +317,7 @@ export default function ChannelsClient() {
   }, [channels, provider]);
 
   return (
+    <>
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
@@ -187,7 +331,7 @@ export default function ChannelsClient() {
           <Button onClick={() => void refresh()} disabled={saving}>
             Refresh
           </Button>
-          <Button kind="primary" onClick={addBinding} disabled={saving}>
+          <Button kind="primary" onClick={openAddBinding} disabled={saving}>
             Add binding
           </Button>
         </div>
@@ -232,7 +376,14 @@ export default function ChannelsClient() {
               </div>
             </div>
             <div className="flex items-center gap-2">
-              <Button kind="danger" onClick={() => void remove(provider)} disabled={saving}>
+              <Button
+                kind="danger"
+                onClick={() => {
+                  setDeleteError(null);
+                  setDeleteOpen(true);
+                }}
+                disabled={saving}
+              >
                 Delete
               </Button>
               <Button kind="primary" onClick={() => void upsert()} disabled={saving}>
@@ -266,5 +417,24 @@ export default function ChannelsClient() {
         </div>
       </div>
     </div>
+
+    <DeleteBindingModal
+      open={deleteOpen}
+      provider={provider}
+      busy={deleteBusy}
+      error={deleteError}
+      onClose={() => setDeleteOpen(false)}
+      onConfirm={() => void doDelete(provider)}
+    />
+
+    <AddBindingModal
+      open={addOpen}
+      value={addProviderId}
+      error={addError}
+      onClose={() => setAddOpen(false)}
+      onChange={(v) => setAddProviderId(v)}
+      onConfirm={confirmAddBinding}
+    />
+    </>
   );
 }
