@@ -65,7 +65,36 @@ export async function toolsInvoke<T = unknown>(req: ToolsInvokeRequest): Promise
   return json.result as T;
 }
 
-export async function gatewayConfigGet(): Promise<{ raw: string; hash: string }> {
+import fs from "node:fs/promises";
+import crypto from "node:crypto";
+import path from "node:path";
+
+function sha256(text: string) {
+  return crypto.createHash("sha256").update(text, "utf8").digest("hex");
+}
+
+function isRecord(v: unknown): v is Record<string, unknown> {
+  return Boolean(v) && typeof v === "object" && !Array.isArray(v);
+}
+
+function deepMerge(base: unknown, patch: unknown): unknown {
+  if (!isRecord(base) || !isRecord(patch)) return patch;
+  const out: Record<string, unknown> = { ...base };
+  for (const [k, v] of Object.entries(patch)) {
+    if (v === null) {
+      delete out[k];
+      continue;
+    }
+    out[k] = deepMerge(out[k], v);
+  }
+  return out;
+}
+
+async function configFilePath() {
+  return path.join(process.env.HOME || "", ".openclaw", "openclaw.json");
+}
+
+async function gatewayConfigGetViaTool(): Promise<{ raw: string; hash: string }> {
   const toolResult = await toolsInvoke<{ content: Array<{ type: string; text?: string }> }>({
     tool: "gateway",
     args: { action: "config.get", raw: "{}" },
@@ -82,8 +111,26 @@ export async function gatewayConfigGet(): Promise<{ raw: string; hash: string }>
   return { raw, hash };
 }
 
-export async function gatewayConfigPatch(patch: unknown, note?: string) {
-  const { hash } = await gatewayConfigGet();
+async function gatewayConfigGetViaFile(): Promise<{ raw: string; hash: string }> {
+  const p = await configFilePath();
+  const raw = await fs.readFile(p, "utf8");
+  return { raw, hash: sha256(raw) };
+}
+
+export async function gatewayConfigGet(): Promise<{ raw: string; hash: string }> {
+  try {
+    return await gatewayConfigGetViaTool();
+  } catch (e: unknown) {
+    const msg = e instanceof Error ? e.message : String(e);
+    if (msg.includes("Tool not available: gateway")) {
+      return await gatewayConfigGetViaFile();
+    }
+    throw e;
+  }
+}
+
+async function gatewayConfigPatchViaTool(patch: unknown, note?: string) {
+  const { hash } = await gatewayConfigGetViaTool();
   const raw = JSON.stringify(patch, null, 2);
 
   return toolsInvoke({
@@ -96,4 +143,29 @@ export async function gatewayConfigPatch(patch: unknown, note?: string) {
       restartDelayMs: 1000,
     },
   });
+}
+
+async function gatewayConfigPatchViaFile(patch: unknown) {
+  const p = await configFilePath();
+  const existingRaw = await fs.readFile(p, "utf8");
+  const existing = JSON.parse(existingRaw) as unknown;
+  const next = deepMerge(existing, patch);
+  const nextRaw = JSON.stringify(next, null, 2) + "\n";
+
+  const backup = `${p}.bak.${Date.now()}`;
+  await fs.writeFile(backup, existingRaw, "utf8");
+  await fs.writeFile(p, nextRaw, "utf8");
+  return { ok: true, note: "Wrote ~/.openclaw/openclaw.json directly; restart gateway to apply." };
+}
+
+export async function gatewayConfigPatch(patch: unknown, note?: string) {
+  try {
+    return await gatewayConfigPatchViaTool(patch, note);
+  } catch (e: unknown) {
+    const msg = e instanceof Error ? e.message : String(e);
+    if (msg.includes("Tool not available: gateway")) {
+      return await gatewayConfigPatchViaFile(patch);
+    }
+    throw e;
+  }
 }
