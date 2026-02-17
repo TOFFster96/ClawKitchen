@@ -8,6 +8,7 @@ type ChannelConfig = Record<string, unknown>;
 type ChannelsResponse = {
   ok: boolean;
   channels?: Record<string, unknown>;
+  bindings?: unknown[];
   error?: string;
 };
 
@@ -166,6 +167,7 @@ function AddBindingModal({
 
 export default function ChannelsClient() {
   const [channels, setChannels] = useState<Record<string, unknown>>({});
+  const [bindings, setBindings] = useState<unknown[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -181,14 +183,18 @@ export default function ChannelsClient() {
   const [addProviderId, setAddProviderId] = useState("telegram");
   const [addError, setAddError] = useState<string | null>(null);
 
-  async function fetchBindings(): Promise<{ ok: true; channels: Record<string, unknown> } | { ok: false; error: string }> {
+  async function fetchBindings(): Promise<
+    | { ok: true; channels: Record<string, unknown>; bindings: unknown[] }
+    | { ok: false; error: string }
+  > {
     const res = await fetch("/api/channels/bindings", { cache: "no-store" });
     const data = (await res.json()) as ChannelsResponse;
     if (!res.ok || !data?.ok) {
       return { ok: false, error: String(data?.error ?? `Failed to load channels (${res.status})`) };
     }
     const ch = isRecord(data.channels) ? data.channels : {};
-    return { ok: true, channels: ch };
+    const b = Array.isArray(data.bindings) ? data.bindings : [];
+    return { ok: true, channels: ch, bindings: b };
   }
 
   async function refresh() {
@@ -199,15 +205,18 @@ export default function ChannelsClient() {
       if (!result.ok) {
         setError(result.error);
         setChannels({});
+        setBindings([]);
         setLoading(false);
         return;
       }
       setChannels(result.channels);
+      setBindings(result.bindings);
       setLoading(false);
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : String(e);
       setError(msg);
       setChannels({});
+      setBindings([]);
       setLoading(false);
     }
   }
@@ -341,7 +350,7 @@ export default function ChannelsClient() {
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
         <div className="ck-glass p-4">
-          <div className="text-sm font-medium">Bindings</div>
+          <div className="text-sm font-medium">Channel configs</div>
           {loading ? (
             <div className="mt-3 text-sm text-[color:var(--ck-text-secondary)]">Loading…</div>
           ) : providers.length === 0 ? (
@@ -368,6 +377,26 @@ export default function ChannelsClient() {
         </div>
 
         <div className="ck-glass p-4 lg:col-span-2">
+          <div className="ck-glass-strong p-3">
+            <div className="text-sm font-medium">Routing bindings (read-only)</div>
+            <div className="mt-1 text-xs text-[color:var(--ck-text-tertiary)]">
+              These are message routing bindings in <code className="font-mono">openclaw.json</code>.
+            </div>
+            {loading ? (
+              <div className="mt-2 text-sm text-[color:var(--ck-text-secondary)]">Loading…</div>
+            ) : bindings.length === 0 ? (
+              <div className="mt-2 text-sm text-[color:var(--ck-text-secondary)]">No bindings found.</div>
+            ) : (
+              <ul className="mt-2 space-y-1 text-xs text-[color:var(--ck-text-secondary)]">
+                {bindings.slice(0, 20).map((b, i) => (
+                  <li key={i} className="font-mono">
+                    {JSON.stringify(b)}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+
           <div className="flex flex-wrap items-center justify-between gap-2">
             <div>
               <div className="text-sm font-medium">Edit</div>
