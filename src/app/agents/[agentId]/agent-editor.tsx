@@ -106,8 +106,6 @@ export default function AgentEditor({ agentId, returnTo }: { agentId: string; re
   const [fileName, setFileName] = useState<string>("IDENTITY.md");
   const [fileContent, setFileContent] = useState<string>("");
 
-
-
   const teamId = agentId.includes("-") ? agentId.split("-").slice(0, -1).join("-") : "";
 
   useEffect(() => {
@@ -207,13 +205,11 @@ export default function AgentEditor({ agentId, returnTo }: { agentId: string; re
     }
   }
 
-
   async function onLoadAgentFile(nextName: string) {
     setLoadingFile(true);
     setMessage("");
     try {
-      const res = await fetch(
-        `/api/agents/file?agentId=${encodeURIComponent(agentId)}&name=${encodeURIComponent(nextName)}`,
+      const res = await fetch(`/api/agents/file?agentId=${encodeURIComponent(agentId)}&name=${encodeURIComponent(nextName)}`,
         { cache: "no-store" },
       );
       const json = (await res.json()) as { ok?: boolean; error?: string; content?: string };
@@ -313,9 +309,7 @@ export default function AgentEditor({ agentId, returnTo }: { agentId: string; re
       {agent.workspace ? (
         <div className="mt-1 text-xs text-[color:var(--ck-text-tertiary)]">Workspace: {agent.workspace}</div>
       ) : null}
-      {teamId ? (
-        <div className="mt-1 text-xs text-[color:var(--ck-text-tertiary)]">Team: {teamId}</div>
-      ) : null}
+      {teamId ? <div className="mt-1 text-xs text-[color:var(--ck-text-tertiary)]">Team: {teamId}</div> : null}
 
       <div className="mt-6 flex flex-wrap gap-2">
         {(
@@ -495,6 +489,19 @@ export default function AgentEditor({ agentId, returnTo }: { agentId: string; re
                   {installingSkill ? "Adding…" : "Add"}
                 </button>
               </div>
+
+              {message ? (
+                <div
+                  className={
+                    message.startsWith("Installed skill:")
+                      ? "mt-3 rounded-[var(--ck-radius-sm)] border border-emerald-400/30 bg-emerald-500/10 p-3 text-sm text-emerald-100"
+                      : "mt-3 rounded-[var(--ck-radius-sm)] border border-red-400/30 bg-red-500/10 p-3 text-sm text-red-100"
+                  }
+                >
+                  {message}
+                </div>
+              ) : null}
+
               <div className="mt-2 text-xs text-[color:var(--ck-text-tertiary)]">
                 This uses <code>openclaw recipes install-skill &lt;skill&gt; --agent-id {agentId} --yes</code>.
               </div>
@@ -508,40 +515,34 @@ export default function AgentEditor({ agentId, returnTo }: { agentId: string; re
               <div className="flex items-center justify-between gap-3">
                 <div className="text-sm font-medium text-[color:var(--ck-text-primary)]">Agent files</div>
                 <label className="flex items-center gap-2 text-xs text-[color:var(--ck-text-secondary)]">
-                  <input
-                    type="checkbox"
-                    checked={showOptionalFiles}
-                    onChange={(e) => setShowOptionalFiles(e.target.checked)}
-                  />
+                  <input type="checkbox" checked={showOptionalFiles} onChange={(e) => setShowOptionalFiles(e.target.checked)} />
                   Show optional
                 </label>
               </div>
-              <div className="mt-2 text-xs text-[color:var(--ck-text-tertiary)]">
-                Default view hides optional missing files to reduce noise.
-              </div>
+              <div className="mt-2 text-xs text-[color:var(--ck-text-tertiary)]">Default view hides optional missing files to reduce noise.</div>
               <ul className="mt-3 space-y-1">
                 {agentFiles
                   .filter((f) => (showOptionalFiles ? true : Boolean(f.required) || !f.missing))
                   .map((f) => (
-                  <li key={f.name}>
-                    <button
-                      onClick={() => onLoadAgentFile(f.name)}
-                      className={
-                        fileName === f.name
-                          ? "w-full rounded-[var(--ck-radius-sm)] bg-white/10 px-3 py-2 text-left text-sm text-[color:var(--ck-text-primary)]"
-                          : "w-full rounded-[var(--ck-radius-sm)] px-3 py-2 text-left text-sm text-[color:var(--ck-text-secondary)] hover:bg-white/5"
-                      }
-                    >
-                      <span className={f.required ? "text-[color:var(--ck-text-primary)]" : "text-[color:var(--ck-text-secondary)]"}>
-                        {f.name}
-                      </span>
-                      <span className="ml-2 text-[10px] uppercase tracking-wide text-[color:var(--ck-text-tertiary)]">
-                        {f.required ? "required" : "optional"}
-                      </span>
-                      {f.missing ? <span className="ml-2 text-xs text-[color:var(--ck-text-tertiary)]">missing</span> : null}
-                    </button>
-                  </li>
-                ))}
+                    <li key={f.name}>
+                      <button
+                        onClick={() => onLoadAgentFile(f.name)}
+                        className={
+                          fileName === f.name
+                            ? "w-full rounded-[var(--ck-radius-sm)] bg-white/10 px-3 py-2 text-left text-sm text-[color:var(--ck-text-primary)]"
+                            : "w-full rounded-[var(--ck-radius-sm)] px-3 py-2 text-left text-sm text-[color:var(--ck-text-secondary)] hover:bg-white/5"
+                        }
+                      >
+                        <span className={f.required ? "text-[color:var(--ck-text-primary)]" : "text-[color:var(--ck-text-secondary)]"}>
+                          {f.name}
+                        </span>
+                        <span className="ml-2 text-[10px] uppercase tracking-wide text-[color:var(--ck-text-tertiary)]">
+                          {f.required ? "required" : "optional"}
+                        </span>
+                        {f.missing ? <span className="ml-2 text-xs text-[color:var(--ck-text-tertiary)]">missing</span> : null}
+                      </button>
+                    </li>
+                  ))}
               </ul>
             </div>
 
@@ -549,9 +550,7 @@ export default function AgentEditor({ agentId, returnTo }: { agentId: string; re
               <div className="flex items-center justify-between gap-3">
                 <div className="text-sm font-medium text-[color:var(--ck-text-primary)]">Edit: {fileName}</div>
                 <div className="flex items-center gap-3">
-                  {loadingFile ? (
-                    <span className="text-xs text-[color:var(--ck-text-tertiary)]">Loading…</span>
-                  ) : null}
+                  {loadingFile ? <span className="text-xs text-[color:var(--ck-text-tertiary)]">Loading…</span> : null}
                   <button
                     disabled={saving}
                     onClick={onSaveAgentFile}
@@ -568,12 +567,6 @@ export default function AgentEditor({ agentId, returnTo }: { agentId: string; re
                 spellCheck={false}
               />
             </div>
-          </div>
-        ) : null}
-
-        {message ? (
-          <div className="rounded-[var(--ck-radius-sm)] border border-white/10 bg-black/20 p-3 text-sm text-[color:var(--ck-text-primary)]">
-            {message}
           </div>
         ) : null}
       </div>

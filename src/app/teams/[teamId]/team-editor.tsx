@@ -78,6 +78,8 @@ export default function TeamEditor({ teamId }: { teamId: string }) {
   const [availableSkills, setAvailableSkills] = useState<string[]>([]);
   const [selectedSkill, setSelectedSkill] = useState<string>("");
   const [installingSkill, setInstallingSkill] = useState(false);
+  const [teamSkillMsg, setTeamSkillMsg] = useState<string>("");
+  const [teamSkillError, setTeamSkillError] = useState<string>("");
 
   const teamRecipes = useMemo(() => recipes.filter((r) => r.kind === "team"), [recipes]);
 
@@ -672,6 +674,8 @@ export default function TeamEditor({ teamId }: { teamId: string }) {
                 disabled={installingSkill || !selectedSkill}
                 onClick={async () => {
                   setInstallingSkill(true);
+                  setTeamSkillMsg("");
+                  setTeamSkillError("");
                   try {
                     const res = await fetch("/api/teams/skills/install", {
                       method: "POST",
@@ -680,14 +684,14 @@ export default function TeamEditor({ teamId }: { teamId: string }) {
                     });
                     const json = await res.json();
                     if (!res.ok || !json.ok) throw new Error(json.error || "Failed to install skill");
-                    flashMessage(`Installed skill: ${selectedSkill}`, "success");
+                    setTeamSkillMsg(`Installed skill: ${selectedSkill}`);
 
                     // Refresh installed list.
                     const r = await fetch(`/api/teams/skills?teamId=${encodeURIComponent(teamId)}`, { cache: "no-store" });
                     const j = await r.json();
                     if (r.ok && j.ok) setSkillsList(Array.isArray(j.skills) ? (j.skills as string[]) : []);
                   } catch (e: unknown) {
-                    flashMessage(e instanceof Error ? e.message : String(e), "error");
+                    setTeamSkillError(e instanceof Error ? e.message : String(e));
                   } finally {
                     setInstallingSkill(false);
                   }
@@ -697,6 +701,18 @@ export default function TeamEditor({ teamId }: { teamId: string }) {
                 {installingSkill ? "Adding…" : "Add"}
               </button>
             </div>
+            {teamSkillError ? (
+              <div className="mt-3 rounded-[var(--ck-radius-sm)] border border-red-400/30 bg-red-500/10 p-3 text-sm text-red-100">
+                {teamSkillError}
+              </div>
+            ) : null}
+
+            {teamSkillMsg ? (
+              <div className="mt-3 rounded-[var(--ck-radius-sm)] border border-emerald-400/30 bg-emerald-500/10 p-3 text-sm text-emerald-100">
+                {teamSkillMsg}
+              </div>
+            ) : null}
+
             <div className="mt-2 text-xs text-[color:var(--ck-text-tertiary)]">
               This uses <code>openclaw recipes install-skill &lt;skill&gt; --team-id {teamId} --yes</code>.
             </div>
