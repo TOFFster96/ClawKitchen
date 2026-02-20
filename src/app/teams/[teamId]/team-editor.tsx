@@ -739,7 +739,7 @@ export default function TeamEditor({ teamId }: { teamId: string }) {
                   if (!res.ok || !json.ok) throw new Error(json.error || "Failed updating agents list");
                   setContent(String(json.content ?? content));
 
-                  // Immediately install/create the new agent(s) by applying config and scaffolding missing files.
+                  // Immediately install/create the new agent by applying config and scaffolding missing files.
                   // Do not overwrite existing recipe-managed files.
                   try {
                     const sync = await fetch("/api/scaffold", {
@@ -762,25 +762,52 @@ export default function TeamEditor({ teamId }: { teamId: string }) {
                     flashMessage(e instanceof Error ? e.message : String(e), "error");
                   }
 
-                  // Refresh detected agents list.
-                  try {
+                  // Poll for new agent to appear; only restart gateway if needed.
+                  const expectedAgentId = typeof (json as { addedAgentId?: unknown }).addedAgentId === "string" ? (json as { addedAgentId?: string }).addedAgentId : "";
+
+                  async function refreshAgentsOnce() {
                     const agentsRes = await fetch("/api/agents", { cache: "no-store" });
                     const agentsJson = (await agentsRes.json()) as { agents?: unknown[] };
-                    if (agentsRes.ok) {
-                      const all = Array.isArray(agentsJson.agents) ? agentsJson.agents : [];
-                      const filtered = all.filter((a) => String((a as { id?: unknown }).id ?? "").startsWith(`${teamId}-`));
-                      setTeamAgents(
-                        filtered.map((a) => {
-                          const agent = a as { id?: unknown; identityName?: unknown };
-                          return {
-                            id: String(agent.id ?? ""),
-                            identityName: typeof agent.identityName === "string" ? agent.identityName : undefined,
-                          };
-                        }),
-                      );
+                    if (!agentsRes.ok) return { ok: false as const, hasExpected: false as const, agents: [] as Array<{ id: string; identityName?: string }> };
+                    const all = Array.isArray(agentsJson.agents) ? agentsJson.agents : [];
+                    const filtered = all.filter((a) => String((a as { id?: unknown }).id ?? "").startsWith(`${teamId}-`));
+                    const mapped = filtered.map((a) => {
+                      const agent = a as { id?: unknown; identityName?: unknown };
+                      return {
+                        id: String(agent.id ?? ""),
+                        identityName: typeof agent.identityName === "string" ? agent.identityName : undefined,
+                      };
+                    });
+                    const hasExpected = expectedAgentId ? mapped.some((a) => a.id === expectedAgentId) : false;
+                    return { ok: true as const, hasExpected, agents: mapped };
+                  }
+
+                  async function pollAgents(maxMs: number) {
+                    const start = Date.now();
+                    while (Date.now() - start < maxMs) {
+                      try {
+                        const r = await refreshAgentsOnce();
+                        if (r.ok) {
+                          setTeamAgents(r.agents);
+                          if (!expectedAgentId || r.hasExpected) return true;
+                        }
+                      } catch {
+                        // ignore
+                      }
+                      await new Promise((res) => setTimeout(res, 500));
                     }
-                  } catch {
-                    // ignore
+                    return false;
+                  }
+
+                  const appeared = await pollAgents(5000);
+                  if (!appeared && expectedAgentId) {
+                    // Background-ish restart: do it only if needed.
+                    try {
+                      void fetch("/api/gateway/restart", { method: "POST" });
+                    } catch {
+                      // ignore
+                    }
+                    await pollAgents(10000);
                   }
 
                   flashMessage(`Updated agents list in ${toId}`, "success");

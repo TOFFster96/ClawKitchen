@@ -141,5 +141,16 @@ export async function POST(req: Request) {
 
   await fs.writeFile(filePath, nextMd, "utf8");
 
-  return NextResponse.json({ ok: true, recipeId, filePath, agents: nextAgents, content: nextMd });
+  // Best-effort: return the last-added role so the client can install immediately.
+  let addedRole: string | null = null;
+  if (op === "add") addedRole = normalizeRole(String(body.role ?? ""));
+  if (op === "addLike") {
+    // In addLike we pushed a clone as the last entry.
+    addedRole = String((nextAgents[nextAgents.length - 1] as { role?: unknown } | undefined)?.role ?? "").trim() || null;
+  }
+
+  const teamId = typeof body.teamId === "string" ? body.teamId.trim() : "";
+  const addedAgentId = teamId && addedRole ? `${teamId}-${addedRole}` : null;
+
+  return NextResponse.json({ ok: true, recipeId, filePath, agents: nextAgents, content: nextMd, addedRole, addedAgentId });
 }

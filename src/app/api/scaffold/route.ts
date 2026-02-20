@@ -300,14 +300,8 @@ export async function POST(req: Request) {
       }
     }
 
-    // If scaffold wrote to config, restart gateway so subsequent `openclaw agents list` reflects the new agent/team.
-    if (body.applyConfig) {
-      try {
-        await runOpenClaw(["gateway", "restart"]);
-      } catch {
-        // best-effort: recipe scaffolding succeeded even if restart fails
-      }
-    }
+    // Note: do NOT restart the gateway here. Some flows (like Add agent) will
+    // poll for updated state and only restart if necessary to avoid global slowness.
 
     return NextResponse.json({ ok: true, args, stdout, stderr });
   } catch (e: unknown) {
