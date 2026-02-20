@@ -608,12 +608,6 @@ export default function AgentEditor({ agentId, returnTo }: { agentId: string; re
                 </div>
               </div>
 
-              {fileError ? (
-                <div className="mt-3 rounded-[var(--ck-radius-sm)] border border-red-400/30 bg-red-500/10 p-3 text-sm text-red-100">
-                  {fileError}
-                </div>
-              ) : null}
-
               <textarea
                 value={fileContent}
                 onChange={(e) => setFileContent(e.target.value)}
