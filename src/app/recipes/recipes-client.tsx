@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { useToast } from "@/components/ToastProvider";
 import { CreateTeamModal } from "./CreateTeamModal";
+import { CreateAgentModal } from "./CreateAgentModal";
 import { DeleteRecipeModal } from "./DeleteRecipeModal";
 
 type Recipe = {
@@ -19,12 +20,14 @@ function RecipesSection({
   items,
   onDelete,
   onCreateTeam,
+  onCreateAgent,
   installedAgentIds,
 }: {
   title: string;
   items: Recipe[];
   onDelete?: (id: string) => void;
   onCreateTeam?: (r: Recipe) => void;
+  onCreateAgent?: (r: Recipe) => void;
   installedAgentIds: string[];
 }) {
   return (
@@ -68,6 +71,16 @@ function RecipesSection({
                       className="rounded-[var(--ck-radius-sm)] border border-white/10 bg-white/5 px-3 py-1.5 text-sm font-medium text-[color:var(--ck-text-primary)] shadow-[var(--ck-shadow-1)] transition-colors hover:bg-white/10 active:bg-white/15"
                     >
                       Create team
+                    </button>
+                  ) : null}
+
+                  {r.kind === "agent" && onCreateAgent ? (
+                    <button
+                      type="button"
+                      onClick={() => onCreateAgent(r)}
+                      className="rounded-[var(--ck-radius-sm)] border border-white/10 bg-white/5 px-3 py-1.5 text-sm font-medium text-[color:var(--ck-text-primary)] shadow-[var(--ck-shadow-1)] transition-colors hover:bg-white/10 active:bg-white/15"
+                    >
+                      Create agent
                     </button>
                   ) : null}
 
@@ -123,6 +136,13 @@ export default function RecipesClient({
   const [createBusy, setCreateBusy] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
 
+  const [createAgentOpen, setCreateAgentOpen] = useState(false);
+  const [createAgentRecipe, setCreateAgentRecipe] = useState<Recipe | null>(null);
+  const [createAgentId, setCreateAgentId] = useState<string>("");
+  const [createAgentName, setCreateAgentName] = useState<string>("");
+  const [createAgentBusy, setCreateAgentBusy] = useState(false);
+  const [createAgentError, setCreateAgentError] = useState<string | null>(null);
+
   const onDelete = (id: string) => {
     setDeleteId(id);
     setModalError(null);
@@ -135,6 +155,14 @@ export default function RecipesClient({
     setInstallCron(true);
     setCreateError(null);
     setCreateOpen(true);
+  };
+
+  const onCreateAgent = (r: Recipe) => {
+    setCreateAgentRecipe(r);
+    setCreateAgentId("");
+    setCreateAgentName("");
+    setCreateAgentError(null);
+    setCreateAgentOpen(true);
   };
 
   async function confirmDelete() {
@@ -174,6 +202,10 @@ export default function RecipesClient({
       setCreateError("Team id is required.");
       return;
     }
+    if (t === recipe.id) {
+      setCreateError(`Team id cannot be the same as the recipe id (${recipe.id}). Choose a new team id.`);
+      return;
+    }
 
     setCreateBusy(true);
     setCreateError(null);
@@ -207,6 +239,52 @@ export default function RecipesClient({
     }
   }
 
+  async function confirmCreateAgent() {
+    const recipe = createAgentRecipe;
+    if (!recipe) return;
+
+    const a = createAgentId.trim();
+    if (!a) {
+      setCreateAgentError("Agent id is required.");
+      return;
+    }
+    if (a === recipe.id) {
+      setCreateAgentError(`Agent id cannot be the same as the recipe id (${recipe.id}). Choose a new agent id.`);
+      return;
+    }
+
+    setCreateAgentBusy(true);
+    setCreateAgentError(null);
+
+    try {
+      const res = await fetch("/api/scaffold", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          kind: "agent",
+          recipeId: recipe.id,
+          agentId: a,
+          name: createAgentName.trim() || undefined,
+          applyConfig: true,
+          overwrite: false,
+        }),
+      });
+      const json = await res.json();
+      if (!res.ok || !json.ok) throw new Error(String(json.error || "Create agent failed"));
+
+      toast.push({ kind: "success", message: `Created agent: ${a}` });
+      setCreateAgentOpen(false);
+      router.push(`/agents/${encodeURIComponent(a)}`);
+      router.refresh();
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : String(e);
+      setCreateAgentError(msg);
+      toast.push({ kind: "error", message: msg });
+    } finally {
+      setCreateAgentBusy(false);
+    }
+  }
+
   return (
     <>
       <div className="mt-8 space-y-10">
@@ -228,6 +306,7 @@ export default function RecipesClient({
               title={`Agents (${customAgentRecipes.length})`}
               items={customAgentRecipes}
               onDelete={onDelete}
+              onCreateAgent={onCreateAgent}
               installedAgentIds={installedAgentIds}
             />
           </div>
@@ -242,6 +321,7 @@ export default function RecipesClient({
               title={`All (${builtin.length})`}
               items={builtin}
               onCreateTeam={onCreateTeam}
+              onCreateAgent={onCreateAgent}
               installedAgentIds={installedAgentIds}
             />
           </div>
@@ -269,6 +349,20 @@ export default function RecipesClient({
         error={createError}
         onClose={() => setCreateOpen(false)}
         onConfirm={confirmCreateTeam}
+      />
+
+      <CreateAgentModal
+        open={createAgentOpen}
+        recipeId={createAgentRecipe?.id ?? ""}
+        recipeName={createAgentRecipe?.name ?? ""}
+        agentId={createAgentId}
+        setAgentId={setCreateAgentId}
+        agentName={createAgentName}
+        setAgentName={setCreateAgentName}
+        busy={createAgentBusy}
+        error={createAgentError}
+        onClose={() => setCreateAgentOpen(false)}
+        onConfirm={confirmCreateAgent}
       />
     </>
   );

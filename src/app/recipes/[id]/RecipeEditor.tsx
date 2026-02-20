@@ -202,15 +202,16 @@ export default function RecipeEditor({ recipeId }: { recipeId: string }) {
 
   function openCreateTeam() {
     setCreateMsg("");
-    setTeamId(teamFrontmatter.fm?.team?.teamId || "");
+    // Leave blank by default to avoid collisions (e.g. team id === recipe id).
+    setTeamId("");
     setCronInstallChoice("no");
     setCreateOpen(true);
   }
 
   function openCreateAgent() {
     setCreateAgentMsg("");
-    const defaultId = (agentFrontmatter.fm?.id || recipe?.id || "").trim();
-    setAgentId(defaultId);
+    // Leave blank by default to avoid collisions (e.g. agent id === recipe id).
+    setAgentId("");
     setAgentName((agentFrontmatter.fm?.name || recipe?.name || "").trim());
     setCreateAgentOpen(true);
   }
@@ -221,6 +222,10 @@ export default function RecipeEditor({ recipeId }: { recipeId: string }) {
     const t = teamId.trim();
     if (!t) {
       setCreateMsg("Team id is required.");
+      return;
+    }
+    if (t === recipe.id) {
+      setCreateMsg(`Team id cannot be the same as the recipe id (${recipe.id}). Choose a new team id.`);
       return;
     }
 
@@ -259,6 +264,10 @@ export default function RecipeEditor({ recipeId }: { recipeId: string }) {
     const a = agentId.trim();
     if (!a) {
       setCreateAgentMsg("Agent id is required.");
+      return;
+    }
+    if (a === recipe.id) {
+      setCreateAgentMsg(`Agent id cannot be the same as the recipe id (${recipe.id}). Choose a new agent id.`);
       return;
     }
 
