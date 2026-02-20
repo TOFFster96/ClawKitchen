@@ -70,15 +70,23 @@ export default function TeamEditor({ teamId }: { teamId: string }) {
   }
 
   const [teamFiles, setTeamFiles] = useState<Array<{ name: string; missing: boolean; required: boolean; rationale?: string }>>([]);
+  const [teamFilesLoading, setTeamFilesLoading] = useState(false);
   const [showOptionalFiles, setShowOptionalFiles] = useState(false);
   const [fileName, setFileName] = useState<string>("SOUL.md");
   const [fileContent, setFileContent] = useState<string>("");
+
   const [cronJobs, setCronJobs] = useState<unknown[]>([]);
+  const [cronLoading, setCronLoading] = useState(false);
+
   const [teamAgents, setTeamAgents] = useState<Array<{ id: string; identityName?: string }>>([]);
+  const [teamAgentsLoading, setTeamAgentsLoading] = useState(false);
+
   const [newRole, setNewRole] = useState<string>("");
   const [newRoleName, setNewRoleName] = useState<string>("");
+
   const [skillsList, setSkillsList] = useState<string[]>([]);
   const [availableSkills, setAvailableSkills] = useState<string[]>([]);
+  const [skillsLoading, setSkillsLoading] = useState(false);
   const [selectedSkill, setSelectedSkill] = useState<string>("");
   const [installingSkill, setInstallingSkill] = useState(false);
   const [teamSkillMsg, setTeamSkillMsg] = useState<string>("");
@@ -162,68 +170,105 @@ export default function TeamEditor({ teamId }: { teamId: string }) {
           if (pick) setFromId(pick.id);
         }
 
-        // Load ancillary data for sub-areas.
-        const [filesRes, cronRes, agentsRes, skillsRes, availableSkillsRes] = await Promise.all([
-          fetch(`/api/teams/files?teamId=${encodeURIComponent(teamId)}`, { cache: "no-store" }),
-          fetch(`/api/cron/jobs?teamId=${encodeURIComponent(teamId)}`, { cache: "no-store" }),
-          fetch("/api/agents", { cache: "no-store" }),
-          fetch(`/api/teams/skills?teamId=${encodeURIComponent(teamId)}`, { cache: "no-store" }),
-          fetch("/api/skills/available", { cache: "no-store" }),
-        ]);
+        // Render ASAP; load the heavier per-tab data in the background.
+        setLoading(false);
 
-        const filesJson = (await filesRes.json()) as { ok?: boolean; files?: unknown[] };
-        if (filesRes.ok && filesJson.ok) {
-          const files = Array.isArray(filesJson.files) ? filesJson.files : [];
-          setTeamFiles(
-            files.map((f) => {
-              const entry = f as { name?: unknown; missing?: unknown; required?: unknown; rationale?: unknown };
-              return {
-                name: String(entry.name ?? ""),
-                missing: Boolean(entry.missing),
-                required: Boolean(entry.required),
-                rationale: typeof entry.rationale === "string" ? entry.rationale : undefined,
-              };
-            }),
-          );
-        }
+        void (async () => {
+          setTeamFilesLoading(true);
+          setCronLoading(true);
+          setTeamAgentsLoading(true);
+          setSkillsLoading(true);
 
-        const cronJson = (await cronRes.json()) as { ok?: boolean; jobs?: unknown[] };
-        if (cronRes.ok && cronJson.ok) {
-          const all = Array.isArray(cronJson.jobs) ? cronJson.jobs : [];
-          setCronJobs(all);
-        }
+          try {
+            const [filesRes, cronRes, agentsRes, skillsRes, availableSkillsRes] = await Promise.all([
+              fetch(`/api/teams/files?teamId=${encodeURIComponent(teamId)}`, { cache: "no-store" }),
+              fetch(`/api/cron/jobs?teamId=${encodeURIComponent(teamId)}`, { cache: "no-store" }),
+              fetch("/api/agents", { cache: "no-store" }),
+              fetch(`/api/teams/skills?teamId=${encodeURIComponent(teamId)}`, { cache: "no-store" }),
+              fetch("/api/skills/available", { cache: "no-store" }),
+            ]);
 
-        const agentsJson = (await agentsRes.json()) as { agents?: unknown[] };
-        if (agentsRes.ok) {
-          const all = Array.isArray(agentsJson.agents) ? agentsJson.agents : [];
-          // Team membership for agents is by id convention: <teamId>-<role>
-          const filtered = all.filter((a) => String((a as { id?: unknown }).id ?? "").startsWith(`${teamId}-`));
-          setTeamAgents(
-            filtered.map((a) => {
-              const agent = a as { id?: unknown; identityName?: unknown };
-              return { id: String(agent.id ?? ""), identityName: typeof agent.identityName === "string" ? agent.identityName : undefined };
-            }),
-          );
-        }
+            try {
+              const filesJson = (await filesRes.json()) as { ok?: boolean; files?: unknown[] };
+              if (filesRes.ok && filesJson.ok) {
+                const files = Array.isArray(filesJson.files) ? filesJson.files : [];
+                setTeamFiles(
+                  files.map((f) => {
+                    const entry = f as { name?: unknown; missing?: unknown; required?: unknown; rationale?: unknown };
+                    return {
+                      name: String(entry.name ?? ""),
+                      missing: Boolean(entry.missing),
+                      required: Boolean(entry.required),
+                      rationale: typeof entry.rationale === "string" ? entry.rationale : undefined,
+                    };
+                  }),
+                );
+              }
+            } catch {
+              // ignore
+            }
 
-        const skillsJson = await skillsRes.json();
-        if (skillsRes.ok && skillsJson.ok) {
-          setSkillsList(Array.isArray(skillsJson.skills) ? (skillsJson.skills as string[]) : []);
-        }
+            try {
+              const cronJson = (await cronRes.json()) as { ok?: boolean; jobs?: unknown[] };
+              if (cronRes.ok && cronJson.ok) {
+                const all = Array.isArray(cronJson.jobs) ? cronJson.jobs : [];
+                setCronJobs(all);
+              }
+            } catch {
+              // ignore
+            }
 
-        const availableSkillsJson = (await availableSkillsRes.json()) as { ok?: boolean; skills?: unknown[] };
-        if (availableSkillsRes.ok && availableSkillsJson.ok) {
-          const list = Array.isArray(availableSkillsJson.skills) ? (availableSkillsJson.skills as string[]) : [];
-          setAvailableSkills(list);
-          setSelectedSkill((prev) => {
-            const p = String(prev ?? "").trim();
-            if (p && list.includes(p)) return p;
-            return list[0] ?? "";
-          });
-        }
+            try {
+              const agentsJson = (await agentsRes.json()) as { agents?: unknown[] };
+              if (agentsRes.ok) {
+                const all = Array.isArray(agentsJson.agents) ? agentsJson.agents : [];
+                // Team membership for agents is by id convention: <teamId>-<role>
+                const filtered = all.filter((a) => String((a as { id?: unknown }).id ?? "").startsWith(`${teamId}-`));
+                setTeamAgents(
+                  filtered.map((a) => {
+                    const agent = a as { id?: unknown; identityName?: unknown };
+                    return { id: String(agent.id ?? ""), identityName: typeof agent.identityName === "string" ? agent.identityName : undefined };
+                  }),
+                );
+              }
+            } catch {
+              // ignore
+            }
+
+            try {
+              const skillsJson = await skillsRes.json();
+              if (skillsRes.ok && skillsJson.ok) {
+                setSkillsList(Array.isArray(skillsJson.skills) ? (skillsJson.skills as string[]) : []);
+              }
+            } catch {
+              // ignore
+            }
+
+            try {
+              const availableSkillsJson = (await availableSkillsRes.json()) as { ok?: boolean; skills?: unknown[] };
+              if (availableSkillsRes.ok && availableSkillsJson.ok) {
+                const list = Array.isArray(availableSkillsJson.skills) ? (availableSkillsJson.skills as string[]) : [];
+                setAvailableSkills(list);
+                setSelectedSkill((prev) => {
+                  const p = String(prev ?? "").trim();
+                  if (p && list.includes(p)) return p;
+                  return list[0] ?? "";
+                });
+              }
+            } catch {
+              // ignore
+            }
+          } finally {
+            setTeamFilesLoading(false);
+            setCronLoading(false);
+            setTeamAgentsLoading(false);
+            setSkillsLoading(false);
+          }
+        })();
       } catch (e: unknown) {
         flashMessage(e instanceof Error ? e.message : String(e), "error");
       } finally {
+        // If the happy-path already flipped loading=false early, this is a no-op.
         setLoading(false);
       }
     })();
@@ -364,6 +409,7 @@ export default function TeamEditor({ teamId }: { teamId: string }) {
     }
   }
 
+  // Initial load only gates the minimal state (recipes + team meta). Everything else streams in.
   if (loading) return <div className="ck-glass mx-auto max-w-4xl p-6">Loading…</div>;
 
   return (
@@ -607,6 +653,8 @@ export default function TeamEditor({ teamId }: { teamId: string }) {
                     </a>
                   </li>
                 ))
+              ) : teamAgentsLoading ? (
+                <li className="text-sm text-[color:var(--ck-text-secondary)]">Loading…</li>
               ) : (
                 <li className="text-sm text-[color:var(--ck-text-secondary)]">No team agents detected.</li>
               )}
@@ -769,6 +817,8 @@ export default function TeamEditor({ teamId }: { teamId: string }) {
                   </li>
                 );
               })
+            ) : cronLoading ? (
+              <li className="text-sm text-[color:var(--ck-text-secondary)]">Loading…</li>
             ) : (
               <li className="text-sm text-[color:var(--ck-text-secondary)]">No cron jobs detected for this team.</li>
             )}
@@ -794,6 +844,9 @@ export default function TeamEditor({ teamId }: { teamId: string }) {
               Default view hides optional missing files to reduce noise.
             </div>
             <ul className="mt-3 space-y-1">
+              {teamFilesLoading ? (
+                <li className="text-sm text-[color:var(--ck-text-secondary)]">Loading…</li>
+              ) : null}
               {teamFiles
                 .filter((f) => (showOptionalFiles ? true : f.required || !f.missing))
                 .map((f) => (

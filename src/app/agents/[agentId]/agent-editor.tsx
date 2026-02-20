@@ -98,10 +98,12 @@ export default function AgentEditor({ agentId, returnTo }: { agentId: string; re
 
   const [skillsList, setSkillsList] = useState<string[]>([]);
   const [availableSkills, setAvailableSkills] = useState<string[]>([]);
+  const [skillsLoading, setSkillsLoading] = useState(false);
   const [selectedSkill, setSelectedSkill] = useState<string>("");
   const [installingSkill, setInstallingSkill] = useState(false);
 
   const [agentFiles, setAgentFiles] = useState<Array<FileEntry & { required?: boolean; rationale?: string }>>([]);
+  const [agentFilesLoading, setAgentFilesLoading] = useState(false);
   const [showOptionalFiles, setShowOptionalFiles] = useState(false);
   const [fileName, setFileName] = useState<string>("IDENTITY.md");
   const [fileContent, setFileContent] = useState<string>("");
@@ -113,13 +115,7 @@ export default function AgentEditor({ agentId, returnTo }: { agentId: string; re
       setLoading(true);
       setMessage("");
       try {
-        const [agentsRes, filesRes, skillsRes, availableSkillsRes] = await Promise.all([
-          fetch("/api/agents", { cache: "no-store" }),
-          fetch(`/api/agents/files?agentId=${encodeURIComponent(agentId)}`, { cache: "no-store" }),
-          fetch(`/api/agents/skills?agentId=${encodeURIComponent(agentId)}`, { cache: "no-store" }),
-          fetch("/api/skills/available", { cache: "no-store" }),
-        ]);
-
+        const agentsRes = await fetch("/api/agents", { cache: "no-store" });
         const agentsJson = (await agentsRes.json()) as { agents?: unknown[] };
         const list = Array.isArray(agentsJson.agents) ? (agentsJson.agents as AgentListItem[]) : [];
         const found = list.find((a) => a.id === agentId) ?? null;
@@ -127,41 +123,76 @@ export default function AgentEditor({ agentId, returnTo }: { agentId: string; re
         setName(found?.identityName ?? "");
         setModel(found?.model ?? "");
 
-        const filesJson = (await filesRes.json()) as FileListResponse;
-        if (filesRes.ok && filesJson.ok) {
-          const files = Array.isArray(filesJson.files) ? filesJson.files : [];
-          setAgentFiles(
-            files.map((f) => {
-              const entry = f as { name?: unknown; missing?: unknown };
-              return {
-                name: String(entry.name ?? ""),
-                missing: Boolean(entry.missing),
-                required: Boolean((entry as { required?: unknown }).required),
-                rationale:
-                  typeof (entry as { rationale?: unknown }).rationale === "string"
-                    ? ((entry as { rationale?: string }).rationale as string)
-                    : undefined,
-              };
-            }),
-          );
-        }
+        // Render ASAP; load files/skills in the background.
+        setLoading(false);
 
-        const skillsJson = (await skillsRes.json()) as { ok?: boolean; skills?: unknown[] };
-        if (skillsRes.ok && skillsJson.ok) {
-          setSkillsList(Array.isArray(skillsJson.skills) ? (skillsJson.skills as string[]) : []);
-        }
+        void (async () => {
+          setAgentFilesLoading(true);
+          setSkillsLoading(true);
 
-        const availableSkillsJson = (await availableSkillsRes.json()) as { ok?: boolean; skills?: unknown[] };
-        if (availableSkillsRes.ok && availableSkillsJson.ok) {
-          const list = Array.isArray(availableSkillsJson.skills) ? (availableSkillsJson.skills as string[]) : [];
-          setAvailableSkills(list);
-          // Default select first available skill not already installed.
-          const first = list.find((s) => !(Array.isArray(skillsJson.skills) ? skillsJson.skills.includes(s) : false));
-          setSelectedSkill(first ?? list[0] ?? "");
-        }
+          try {
+            const [filesRes, skillsRes, availableSkillsRes] = await Promise.all([
+              fetch(`/api/agents/files?agentId=${encodeURIComponent(agentId)}`, { cache: "no-store" }),
+              fetch(`/api/agents/skills?agentId=${encodeURIComponent(agentId)}`, { cache: "no-store" }),
+              fetch("/api/skills/available", { cache: "no-store" }),
+            ]);
+
+            let installedSkills: string[] = [];
+
+            try {
+              const filesJson = (await filesRes.json()) as FileListResponse;
+              if (filesRes.ok && filesJson.ok) {
+                const files = Array.isArray(filesJson.files) ? filesJson.files : [];
+                setAgentFiles(
+                  files.map((f) => {
+                    const entry = f as { name?: unknown; missing?: unknown };
+                    return {
+                      name: String(entry.name ?? ""),
+                      missing: Boolean(entry.missing),
+                      required: Boolean((entry as { required?: unknown }).required),
+                      rationale:
+                        typeof (entry as { rationale?: unknown }).rationale === "string"
+                          ? ((entry as { rationale?: string }).rationale as string)
+                          : undefined,
+                    };
+                  }),
+                );
+              }
+            } catch {
+              // ignore
+            }
+
+            try {
+              const skillsJson = (await skillsRes.json()) as { ok?: boolean; skills?: unknown[] };
+              if (skillsRes.ok && skillsJson.ok) {
+                installedSkills = Array.isArray(skillsJson.skills) ? (skillsJson.skills as string[]) : [];
+                setSkillsList(installedSkills);
+              }
+            } catch {
+              // ignore
+            }
+
+            try {
+              const availableSkillsJson = (await availableSkillsRes.json()) as { ok?: boolean; skills?: unknown[] };
+              if (availableSkillsRes.ok && availableSkillsJson.ok) {
+                const list = Array.isArray(availableSkillsJson.skills) ? (availableSkillsJson.skills as string[]) : [];
+                setAvailableSkills(list);
+                // Default select first available skill not already installed.
+                const first = list.find((s) => !installedSkills.includes(s));
+                setSelectedSkill(first ?? list[0] ?? "");
+              }
+            } catch {
+              // ignore
+            }
+          } finally {
+            setAgentFilesLoading(false);
+            setSkillsLoading(false);
+          }
+        })();
       } catch (e: unknown) {
         setMessage(e instanceof Error ? e.message : String(e));
       } finally {
+        // If the happy-path already flipped loading=false early, this is a no-op.
         setLoading(false);
       }
     })();
@@ -206,15 +237,20 @@ export default function AgentEditor({ agentId, returnTo }: { agentId: string; re
   }
 
   async function onLoadAgentFile(nextName: string) {
+    // Update selection immediately so the UI reflects what the user clicked,
+    // even if the network request fails.
+    setFileName(nextName);
+    setFileContent("");
+
     setLoadingFile(true);
     setMessage("");
     try {
-      const res = await fetch(`/api/agents/file?agentId=${encodeURIComponent(agentId)}&name=${encodeURIComponent(nextName)}`,
+      const res = await fetch(
+        `/api/agents/file?agentId=${encodeURIComponent(agentId)}&name=${encodeURIComponent(nextName)}`,
         { cache: "no-store" },
       );
       const json = (await res.json()) as { ok?: boolean; error?: string; content?: string };
       if (!res.ok || !json.ok) throw new Error(json.error || "Failed to load file");
-      setFileName(nextName);
       setFileContent(String(json.content ?? ""));
     } catch (e: unknown) {
       setMessage(e instanceof Error ? e.message : String(e));
@@ -280,6 +316,7 @@ export default function AgentEditor({ agentId, returnTo }: { agentId: string; re
     }
   }
 
+  // Initial load only gates the minimal state (agent exists). Files/skills stream in.
   if (loading) return <div className="ck-glass mx-auto max-w-4xl p-6">Loading…</div>;
   if (!agent) return <div className="ck-glass mx-auto max-w-4xl p-6">Agent not found: {agentId}</div>;
 
@@ -436,7 +473,13 @@ export default function AgentEditor({ agentId, returnTo }: { agentId: string; re
             <div className="mt-4">
               <div className="text-xs font-medium text-[color:var(--ck-text-secondary)]">Installed</div>
               <ul className="mt-2 list-disc space-y-1 pl-5 text-sm text-[color:var(--ck-text-secondary)]">
-                {skillsList.length ? skillsList.map((s) => <li key={s}>{s}</li>) : <li>None installed.</li>}
+                {skillsLoading ? (
+                  <li>Loading…</li>
+                ) : skillsList.length ? (
+                  skillsList.map((s) => <li key={s}>{s}</li>)
+                ) : (
+                  <li>None installed.</li>
+                )}
               </ul>
             </div>
 
@@ -521,6 +564,9 @@ export default function AgentEditor({ agentId, returnTo }: { agentId: string; re
               </div>
               <div className="mt-2 text-xs text-[color:var(--ck-text-tertiary)]">Default view hides optional missing files to reduce noise.</div>
               <ul className="mt-3 space-y-1">
+                {agentFilesLoading ? (
+                  <li className="text-sm text-[color:var(--ck-text-secondary)]">Loading…</li>
+                ) : null}
                 {agentFiles
                   .filter((f) => (showOptionalFiles ? true : Boolean(f.required) || !f.missing))
                   .map((f) => (
