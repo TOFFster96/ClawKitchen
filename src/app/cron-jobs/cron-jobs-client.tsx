@@ -1,15 +1,19 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { useToast } from "@/components/ToastProvider";
+import { DeleteCronJobModal } from "./DeleteCronJobModal";
 
 type CronJob = {
   id: string;
   name?: string;
   enabled?: boolean;
-  schedule?: { kind?: string; expr?: string; everyMs?: number };
+  schedule?: { kind?: string; expr?: string; everyMs?: number; tz?: string };
   state?: { nextRunAtMs?: number };
   agentId?: string;
   sessionTarget?: string;
+  // Optional enrichment from the API (which team/agent it belongs to)
+  scope?: { kind: "team" | "agent"; id: string; label: string; href: string };
 };
 
 function fmtSchedule(s?: CronJob["schedule"]): string {
@@ -23,9 +27,16 @@ function fmtSchedule(s?: CronJob["schedule"]): string {
 }
 
 export default function CronJobsClient() {
+  const toast = useToast();
   const [loading, setLoading] = useState(false);
   const [jobs, setJobs] = useState<CronJob[]>([]);
   const [msg, setMsg] = useState<string>("");
+
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [deleteId, setDeleteId] = useState<string>("");
+  const [deleteLabel, setDeleteLabel] = useState<string>("");
+  const [deleteBusy, setDeleteBusy] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
 
   const sorted = useMemo(() => {
     return [...jobs].sort((a, b) => String(a.name ?? "").localeCompare(String(b.name ?? "")));
@@ -74,9 +85,40 @@ export default function CronJobsClient() {
     }
   }
 
+  function openDelete(job: CronJob) {
+    setDeleteId(job.id);
+    setDeleteLabel(job.name ?? job.id);
+    setDeleteError(null);
+    setDeleteOpen(true);
+  }
+
+  async function confirmDelete() {
+    setDeleteBusy(true);
+    setDeleteError(null);
+    try {
+      const res = await fetch("/api/cron/delete", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ id: deleteId }),
+      });
+      const json = (await res.json()) as { ok: boolean; error?: string };
+      if (!res.ok || !json.ok) throw new Error(json.error || "Delete failed");
+      toast.push({ kind: "success", message: `Removed cron job: ${deleteLabel}` });
+      setDeleteOpen(false);
+      await refresh();
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : String(e);
+      setDeleteError(msg);
+      toast.push({ kind: "error", message: msg });
+    } finally {
+      setDeleteBusy(false);
+    }
+  }
+
   return (
-    <div>
-      <div className="ck-glass-strong p-4">
+    <>
+      <div>
+        <div className="ck-glass-strong p-4">
         <div className="flex items-center justify-between">
           <div>
             <h2 className="text-lg font-semibold">All Cron Jobs</h2>
@@ -111,6 +153,14 @@ export default function CronJobsClient() {
                   <span>{fmtSchedule(j.schedule)}</span>
                   <span>{j.enabled ? "✅ enabled" : "⏸ disabled"}</span>
                   {j.agentId ? <span>agent: {j.agentId}</span> : null}
+                  {j.scope ? (
+                    <span>
+                      {j.scope.kind}: {" "}
+                      <a className="underline hover:no-underline" href={j.scope.href}>
+                        {j.scope.label}
+                      </a>
+                    </span>
+                  ) : null}
                   {j.sessionTarget ? <span>target: {j.sessionTarget}</span> : null}
                   {j.state?.nextRunAtMs ? (
                     <span>next: {new Date(j.state.nextRunAtMs).toLocaleString()}</span>
@@ -134,11 +184,30 @@ export default function CronJobsClient() {
                 >
                   Run now
                 </button>
+                <button
+                  type="button"
+                  title={j.enabled ? "Disable this job before deleting." : "Delete cron job"}
+                  onClick={() => openDelete(j)}
+                  disabled={loading || Boolean(j.enabled)}
+                  className="rounded-[var(--ck-radius-sm)] border border-red-400/40 bg-red-500/10 px-3 py-2 text-sm font-medium text-red-100 transition-colors hover:bg-red-500/15 disabled:opacity-40"
+                >
+                  Delete
+                </button>
               </div>
             </div>
           </div>
         ))}
       </div>
     </div>
+
+      <DeleteCronJobModal
+        open={deleteOpen}
+        jobLabel={deleteLabel}
+        busy={deleteBusy}
+        error={deleteError}
+        onClose={() => setDeleteOpen(false)}
+        onConfirm={confirmDelete}
+      />
+    </>
   );
 }
