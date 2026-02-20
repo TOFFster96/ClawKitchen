@@ -81,7 +81,11 @@ export default function AgentEditor({ agentId, returnTo }: { agentId: string; re
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [loadingFile, setLoadingFile] = useState(false);
-  const [message, setMessage] = useState<string>("");
+  // Split concerns: avoid file-load errors showing up in the Skills notice area.
+  const [pageMsg, setPageMsg] = useState<string>("");
+  const [fileError, setFileError] = useState<string>("");
+  const [skillMsg, setSkillMsg] = useState<string>("");
+  const [skillError, setSkillError] = useState<string>("");
 
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleteBusy, setDeleteBusy] = useState(false);
@@ -113,7 +117,7 @@ export default function AgentEditor({ agentId, returnTo }: { agentId: string; re
   useEffect(() => {
     (async () => {
       setLoading(true);
-      setMessage("");
+      setPageMsg("");
       try {
         const agentsRes = await fetch("/api/agents", { cache: "no-store" });
         const agentsJson = (await agentsRes.json()) as { agents?: unknown[] };
@@ -190,7 +194,7 @@ export default function AgentEditor({ agentId, returnTo }: { agentId: string; re
           }
         })();
       } catch (e: unknown) {
-        setMessage(e instanceof Error ? e.message : String(e));
+        setPageMsg(e instanceof Error ? e.message : String(e));
       } finally {
         // If the happy-path already flipped loading=false early, this is a no-op.
         setLoading(false);
@@ -200,7 +204,7 @@ export default function AgentEditor({ agentId, returnTo }: { agentId: string; re
 
   async function onSaveIdentity() {
     setSaving(true);
-    setMessage("");
+    setPageMsg("");
     try {
       const res = await fetch("/api/agents/identity", {
         method: "POST",
@@ -209,9 +213,9 @@ export default function AgentEditor({ agentId, returnTo }: { agentId: string; re
       });
       const json = (await res.json()) as { message?: string; error?: string };
       if (!res.ok) throw new Error(json.message || json.error || "Save failed");
-      setMessage("Saved identity via openclaw agents set-identity");
+      setPageMsg("Saved identity via openclaw agents set-identity");
     } catch (e: unknown) {
-      setMessage(e instanceof Error ? e.message : String(e));
+      setPageMsg(e instanceof Error ? e.message : String(e));
     } finally {
       setSaving(false);
     }
@@ -219,7 +223,10 @@ export default function AgentEditor({ agentId, returnTo }: { agentId: string; re
 
   async function onSaveConfig() {
     setSaving(true);
-    setMessage("");
+    setPageMsg("");
+
+    // Auto-clear after a moment (non-blocking).
+    setTimeout(() => setPageMsg(""), 6000);
     try {
       const res = await fetch("/api/agents/update", {
         method: "POST",
@@ -228,9 +235,9 @@ export default function AgentEditor({ agentId, returnTo }: { agentId: string; re
       });
       const json = (await res.json()) as { error?: string };
       if (!res.ok) throw new Error(json.error || "Save config failed");
-      setMessage("Saved agent config (model) and restarted gateway");
+      setPageMsg("Saved agent config (model) and restarted gateway");
     } catch (e: unknown) {
-      setMessage(e instanceof Error ? e.message : String(e));
+      setPageMsg(e instanceof Error ? e.message : String(e));
     } finally {
       setSaving(false);
     }
@@ -243,7 +250,7 @@ export default function AgentEditor({ agentId, returnTo }: { agentId: string; re
     setFileContent("");
 
     setLoadingFile(true);
-    setMessage("");
+    setFileError("");
     try {
       const res = await fetch(
         `/api/agents/file?agentId=${encodeURIComponent(agentId)}&name=${encodeURIComponent(nextName)}`,
@@ -253,7 +260,8 @@ export default function AgentEditor({ agentId, returnTo }: { agentId: string; re
       if (!res.ok || !json.ok) throw new Error(json.error || "Failed to load file");
       setFileContent(String(json.content ?? ""));
     } catch (e: unknown) {
-      setMessage(e instanceof Error ? e.message : String(e));
+      setFileError(e instanceof Error ? e.message : String(e));
+      setTimeout(() => setFileError(""), 12000);
     } finally {
       setLoadingFile(false);
     }
@@ -282,7 +290,7 @@ export default function AgentEditor({ agentId, returnTo }: { agentId: string; re
 
   async function onSaveAgentFile() {
     setSaving(true);
-    setMessage("");
+    setFileError("");
     try {
       const res = await fetch("/api/agents/file", {
         method: "PUT",
@@ -291,9 +299,10 @@ export default function AgentEditor({ agentId, returnTo }: { agentId: string; re
       });
       const json = (await res.json()) as { ok?: boolean; error?: string };
       if (!res.ok || !json.ok) throw new Error(json.error || "Failed to save file");
-      setMessage(`Saved ${fileName}`);
+      // No-op: saving a file doesn't need a global notice.
     } catch (e: unknown) {
-      setMessage(e instanceof Error ? e.message : String(e));
+      setFileError(e instanceof Error ? e.message : String(e));
+      setTimeout(() => setFileError(""), 12000);
     } finally {
       setSaving(false);
     }
@@ -302,7 +311,7 @@ export default function AgentEditor({ agentId, returnTo }: { agentId: string; re
   async function onDeleteAgent() {
     setDeleteBusy(true);
     setDeleteError(null);
-    setMessage("");
+    setPageMsg("");
 
     try {
       const res = await fetch(`/api/agents/${encodeURIComponent(agentId)}`, { method: "DELETE" });
@@ -507,7 +516,8 @@ export default function AgentEditor({ agentId, returnTo }: { agentId: string; re
                   disabled={installingSkill || !selectedSkill}
                   onClick={async () => {
                     setInstallingSkill(true);
-                    setMessage("");
+                    setSkillMsg("");
+                    setSkillError("");
                     try {
                       const res = await fetch("/api/agents/skills/install", {
                         method: "POST",
@@ -516,13 +526,15 @@ export default function AgentEditor({ agentId, returnTo }: { agentId: string; re
                       });
                       const json = await res.json();
                       if (!res.ok || !json.ok) throw new Error(json.error || "Failed to install skill");
-                      setMessage(`Installed skill: ${selectedSkill}`);
+                      setSkillMsg(`Installed skill: ${selectedSkill}`);
+                      setTimeout(() => setSkillMsg(""), 8000);
                       // Refresh installed list.
                       const r = await fetch(`/api/agents/skills?agentId=${encodeURIComponent(agentId)}`, { cache: "no-store" });
                       const j = await r.json();
                       if (r.ok && j.ok) setSkillsList(Array.isArray(j.skills) ? j.skills : []);
                     } catch (e: unknown) {
-                      setMessage(e instanceof Error ? e.message : String(e));
+                      setSkillError(e instanceof Error ? e.message : String(e));
+                      setTimeout(() => setSkillError(""), 12000);
                     } finally {
                       setInstallingSkill(false);
                     }
@@ -533,15 +545,13 @@ export default function AgentEditor({ agentId, returnTo }: { agentId: string; re
                 </button>
               </div>
 
-              {message ? (
-                <div
-                  className={
-                    message.startsWith("Installed skill:")
-                      ? "mt-3 rounded-[var(--ck-radius-sm)] border border-emerald-400/30 bg-emerald-500/10 p-3 text-sm text-emerald-100"
-                      : "mt-3 rounded-[var(--ck-radius-sm)] border border-red-400/30 bg-red-500/10 p-3 text-sm text-red-100"
-                  }
-                >
-                  {message}
+              {skillError ? (
+                <div className="mt-3 rounded-[var(--ck-radius-sm)] border border-red-400/30 bg-red-500/10 p-3 text-sm text-red-100">
+                  {skillError}
+                </div>
+              ) : skillMsg ? (
+                <div className="mt-3 rounded-[var(--ck-radius-sm)] border border-emerald-400/30 bg-emerald-500/10 p-3 text-sm text-emerald-100">
+                  {skillMsg}
                 </div>
               ) : null}
 
