@@ -135,3 +135,33 @@ See [docs/GOALS.md](docs/GOALS.md).
 ## Notes
 - This app shells out to `openclaw` on the same machine (local-first by design).
 - Phase 2 will add marketplace/search/publish flows.
+
+---
+
+## Troubleshooting
+
+### Stop Kitchen
+
+Kitchen runs in-process with the OpenClaw Gateway. The supported way to stop it is to disable the plugin and restart the gateway:
+
+```bash
+openclaw plugins disable kitchen
+openclaw gateway restart
+```
+
+(You can re-enable it later with `openclaw plugins enable kitchen` and another gateway restart.)
+
+### 500 errors for `/_next/static/chunks/*.js` (broken styles / blank UI)
+
+If you see 500s when loading Next static chunk files (for example `/_next/static/chunks/<hash>.js`), it usually means Kitchen is running with `dev: false` but the local `.next/` build output is missing or out of date.
+
+Fix:
+
+```bash
+cd /home/control/clawkitchen
+npm install
+npm run build
+openclaw gateway restart
+```
+
+Then hard refresh the browser.
