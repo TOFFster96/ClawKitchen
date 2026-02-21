@@ -1,6 +1,9 @@
 import { runOpenClaw } from "@/lib/openclaw";
 import HomeClient from "./HomeClient";
 
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
+
 type AgentListItem = {
   id: string;
   identityName?: string;
