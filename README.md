@@ -16,18 +16,11 @@ ClawKitchen can be loaded as an OpenClaw plugin so it runs locally on the orches
 
 **Recommended (end users):** install the published plugin package (ships with a prebuilt `.next/` so you don’t run any npm commands).
 
-**Developer/testing:** you can also load it directly from a local repo path via `plugins.load.paths`.
-
 Edit your OpenClaw config (`~/.openclaw/openclaw.json`) and add:
 
 ```json5
 {
   "plugins": {
-    // Local developers only
-    "load": {
-      "paths": ["/home/control/clawkitchen"]
-    },
-
     // If you use plugins.allow, ensure kitchen is allowed.
     "allow": ["kitchen", "recipes"],
 
