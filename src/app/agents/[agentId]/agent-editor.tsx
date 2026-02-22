@@ -225,8 +225,6 @@ export default function AgentEditor({ agentId, returnTo }: { agentId: string; re
     setSaving(true);
     setPageMsg("");
 
-    // Auto-clear after a moment (non-blocking).
-    setTimeout(() => setPageMsg(""), 6000);
     try {
       const res = await fetch("/api/agents/update", {
         method: "POST",
@@ -261,7 +259,6 @@ export default function AgentEditor({ agentId, returnTo }: { agentId: string; re
       setFileContent(String(json.content ?? ""));
     } catch (e: unknown) {
       setFileError(e instanceof Error ? e.message : String(e));
-      setTimeout(() => setFileError(""), 12000);
     } finally {
       setLoadingFile(false);
     }
@@ -288,6 +285,29 @@ export default function AgentEditor({ agentId, returnTo }: { agentId: string; re
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeTab, agentId, agentFiles.length]);
 
+  function defaultFileContent(name: string) {
+    switch (name) {
+      case "SOUL.md":
+        return "# SOUL.md\n\n";
+      case "AGENTS.md":
+        return "# AGENTS.md\n\n";
+      case "TOOLS.md":
+        return "# TOOLS.md\n\n";
+      case "STATUS.md":
+        return "# STATUS.md\n\n- (empty)\n";
+      case "NOTES.md":
+        return "# NOTES.md\n\n- (empty)\n";
+      case "IDENTITY.md":
+        return "# IDENTITY.md\n\n- **Name:**\n- **Creature:**\n- **Vibe:**\n- **Emoji:**\n- **Avatar:**\n";
+      case "USER.md":
+        return "# USER.md\n\n";
+      case "HEARTBEAT.md":
+        return "# HEARTBEAT.md\n\n# Keep this file empty (or with only comments) to skip heartbeat API calls.\n";
+      default:
+        return "";
+    }
+  }
+
   async function onSaveAgentFile() {
     setSaving(true);
     setFileError("");
@@ -299,13 +319,26 @@ export default function AgentEditor({ agentId, returnTo }: { agentId: string; re
       });
       const json = (await res.json()) as { ok?: boolean; error?: string };
       if (!res.ok || !json.ok) throw new Error(json.error || "Failed to save file");
+
+      // Refresh the file list so missing/mtime updates immediately.
+      const r = await fetch(`/api/agents/files?agentId=${encodeURIComponent(agentId)}`, { cache: "no-store" });
+      const j = await r.json();
+      if (r.ok && j.ok && Array.isArray(j.files)) {
+        setAgentFiles(j.files);
+      }
       // No-op: saving a file doesn't need a global notice.
     } catch (e: unknown) {
       setFileError(e instanceof Error ? e.message : String(e));
-      setTimeout(() => setFileError(""), 12000);
     } finally {
       setSaving(false);
     }
+  }
+
+  async function onCreateMissingFile(name: string) {
+    setFileName(name);
+    setFileError("");
+    setFileContent(defaultFileContent(name));
+    await onSaveAgentFile();
   }
 
   async function onDeleteAgent() {
@@ -533,14 +566,12 @@ export default function AgentEditor({ agentId, returnTo }: { agentId: string; re
                       const json = await res.json();
                       if (!res.ok || !json.ok) throw new Error(json.error || "Failed to install skill");
                       setSkillMsg(`Installed skill: ${selectedSkill}`);
-                      setTimeout(() => setSkillMsg(""), 8000);
                       // Refresh installed list.
                       const r = await fetch(`/api/agents/skills?agentId=${encodeURIComponent(agentId)}`, { cache: "no-store" });
                       const j = await r.json();
                       if (r.ok && j.ok) setSkillsList(Array.isArray(j.skills) ? j.skills : []);
                     } catch (e: unknown) {
                       setSkillError(e instanceof Error ? e.message : String(e));
-                      setTimeout(() => setSkillError(""), 12000);
                     } finally {
                       setInstallingSkill(false);
                     }
@@ -587,22 +618,34 @@ export default function AgentEditor({ agentId, returnTo }: { agentId: string; re
                   .filter((f) => (showOptionalFiles ? true : Boolean(f.required) || !f.missing))
                   .map((f) => (
                     <li key={f.name}>
-                      <button
-                        onClick={() => onLoadAgentFile(f.name)}
-                        className={
-                          fileName === f.name
-                            ? "w-full rounded-[var(--ck-radius-sm)] bg-white/10 px-3 py-2 text-left text-sm text-[color:var(--ck-text-primary)]"
-                            : "w-full rounded-[var(--ck-radius-sm)] px-3 py-2 text-left text-sm text-[color:var(--ck-text-secondary)] hover:bg-white/5"
-                        }
-                      >
-                        <span className={f.required ? "text-[color:var(--ck-text-primary)]" : "text-[color:var(--ck-text-secondary)]"}>
-                          {f.name}
-                        </span>
-                        <span className="ml-2 text-[10px] uppercase tracking-wide text-[color:var(--ck-text-tertiary)]">
-                          {f.required ? "required" : "optional"}
-                        </span>
-                        {f.missing ? <span className="ml-2 text-xs text-[color:var(--ck-text-tertiary)]">missing</span> : null}
-                      </button>
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={() => onLoadAgentFile(f.name)}
+                          className={
+                            fileName === f.name
+                              ? "w-full rounded-[var(--ck-radius-sm)] bg-white/10 px-3 py-2 text-left text-sm text-[color:var(--ck-text-primary)]"
+                              : "w-full rounded-[var(--ck-radius-sm)] px-3 py-2 text-left text-sm text-[color:var(--ck-text-secondary)] hover:bg-white/5"
+                          }
+                        >
+                          <span className={f.required ? "text-[color:var(--ck-text-primary)]" : "text-[color:var(--ck-text-secondary)]"}>
+                            {f.name}
+                          </span>
+                          <span className="ml-2 text-[10px] uppercase tracking-wide text-[color:var(--ck-text-tertiary)]">
+                            {f.required ? "required" : "optional"}
+                          </span>
+                          {f.missing ? <span className="ml-2 text-xs text-[color:var(--ck-text-tertiary)]">missing</span> : null}
+                        </button>
+                        {f.missing ? (
+                          <button
+                            type="button"
+                            disabled={saving}
+                            onClick={() => void onCreateMissingFile(f.name)}
+                            className="shrink-0 rounded-[var(--ck-radius-sm)] border border-white/10 bg-white/5 px-2 py-1 text-xs font-medium text-[color:var(--ck-text-primary)] hover:bg-white/10 disabled:opacity-50"
+                          >
+                            Create
+                          </button>
+                        ) : null}
+                      </div>
                     </li>
                   ))}
               </ul>

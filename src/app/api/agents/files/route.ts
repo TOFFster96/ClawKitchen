@@ -26,11 +26,13 @@ export async function GET(req: Request) {
 
   // Required vs optional classification to avoid "missing" noise.
   const candidates: Array<{ name: string; required: boolean; rationale: string }> = [
-    { name: "IDENTITY.md", required: true, rationale: "Identity (name/emoji/avatar)" },
     { name: "SOUL.md", required: true, rationale: "Agent persona/instructions" },
     { name: "AGENTS.md", required: true, rationale: "Agent operating rules" },
     { name: "TOOLS.md", required: true, rationale: "Agent local notes" },
 
+    { name: "STATUS.md", required: false, rationale: "Optional current status snapshot" },
+    { name: "NOTES.md", required: false, rationale: "Optional scratchpad" },
+    { name: "IDENTITY.md", required: false, rationale: "Optional identity (name/emoji/avatar)" },
     { name: "USER.md", required: false, rationale: "Optional user profile" },
     { name: "HEARTBEAT.md", required: false, rationale: "Optional periodic checklist" },
   ];
