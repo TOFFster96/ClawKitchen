@@ -1,719 +1,98 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { parse as parseYaml } from "yaml";
 import { useRouter } from "next/navigation";
-import { type AgentListItem } from "@/lib/agents";
-import { cronJobId, cronJobLabel, type CronJobShape } from "@/lib/cron";
-import { type FileListEntry, normalizeFileListEntries } from "@/lib/editor-utils";
-import { errorMessage } from "@/lib/errors";
-import { forceFrontmatterId, type RecipeDetail, type RecipeListItem } from "@/lib/recipes";
-import { WorkspaceFileListSidebar } from "@/components/WorkspaceFileListSidebar";
-import { CloneTeamModal } from "./CloneTeamModal";
 import { DeleteTeamModal } from "./DeleteTeamModal";
+import { PublishChangesModal } from "./PublishChangesModal";
 import { useToast } from "@/components/ToastProvider";
 
-type FlashKind = "success" | "error" | "info";
+type RecipeListItem = {
+  id: string;
+  name: string;
+  kind: "agent" | "team";
+  source: "builtin" | "workspace";
+};
 
-function getTabButtonClass(activeTab: string, tabId: string): string {
-  const isActive = activeTab === tabId;
-  const base = "rounded-[var(--ck-radius-sm)] px-3 py-2 text-sm font-medium shadow-[var(--ck-shadow-1)]";
-  if (isActive) {
-    return `${base} bg-[var(--ck-accent-red)] text-white`;
-  }
-  return `${base} border border-white/10 bg-white/5 text-[color:var(--ck-text-primary)] hover:bg-white/10`;
-}
-
-async function updateTeamAgents(
-  body: { recipeId: string; op: "add" | "remove"; role: string; name?: string },
-  successMsg: string,
-  ensureRecipe: () => Promise<void>,
-  currentContent: string,
-  setContent: (c: string) => void,
-  flashMessage: (msg: string, type: "success" | "error") => void,
-  setSaving: (v: boolean) => void
-) {
-  setSaving(true);
-  try {
-    await ensureRecipe();
-    const res = await fetch("/api/recipes/team-agents", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify(body),
-    });
-    const json = await res.json();
-    if (!res.ok || !json.ok) throw new Error((json as { error?: string }).error || "Failed updating agents list");
-    setContent(String((json as { content?: string }).content ?? currentContent));
-    flashMessage(successMsg, "success");
-  } catch (e: unknown) {
-    flashMessage(errorMessage(e), "error");
-  } finally {
-    setSaving(false);
-  }
-}
-
-function applyLockedOrFallback(
-  locked: { recipeId: string; recipeName?: string } | null,
-  list: RecipeListItem[],
-  teamId: string,
-  setLockedFromId: (v: string | null) => void,
-  setLockedFromName: (v: string | null) => void,
-  setProvenanceMissing: (v: boolean) => void,
-  setFromId: (v: string) => void
-) {
-  if (locked) {
-    setLockedFromId(locked.recipeId);
-    setLockedFromName(locked.recipeName ?? null);
-    setProvenanceMissing(false);
-    setFromId(locked.recipeId);
-  } else {
-    setLockedFromId(null);
-    setLockedFromName(null);
-    setProvenanceMissing(true);
-    const preferred = list.find((r) => r.kind === "team" && r.id === teamId);
-    const fallback = list.find((r) => r.kind === "team");
-    const pick = preferred ?? fallback;
-    if (pick) setFromId(pick.id);
-  }
-}
-
-async function parseMetaForLocked(metaRes: Response): Promise<{ recipeId: string; recipeName?: string } | null> {
-  try {
-    const metaJson = await metaRes.json();
-    if (!metaRes.ok || !metaJson.ok || !metaJson.meta || !(metaJson.meta as { recipeId?: unknown }).recipeId) {
-      return null;
-    }
-    const m = metaJson.meta as { recipeId?: unknown; recipeName?: unknown };
-    return {
-      recipeId: String(m.recipeId),
-      recipeName: typeof m.recipeName === "string" ? m.recipeName : undefined,
-    };
-  } catch {
-    return null;
-  }
-}
-
-async function loadAncillaryData(
-  teamId: string,
-  setTeamFiles: React.Dispatch<React.SetStateAction<FileListEntry[]>>,
-  setCronJobs: React.Dispatch<React.SetStateAction<unknown[]>>,
-  setTeamAgents: React.Dispatch<React.SetStateAction<Pick<AgentListItem, "id" | "identityName">[]>>,
-  setSkillsList: React.Dispatch<React.SetStateAction<string[]>>
-) {
-  const [filesRes, cronRes, agentsRes, skillsRes] = await Promise.all([
-    fetch(`/api/teams/files?teamId=${encodeURIComponent(teamId)}`, { cache: "no-store" }),
-    fetch(`/api/cron/jobs?teamId=${encodeURIComponent(teamId)}`, { cache: "no-store" }),
-    fetch("/api/agents", { cache: "no-store" }),
-    fetch(`/api/teams/skills?teamId=${encodeURIComponent(teamId)}`, { cache: "no-store" }),
-  ]);
-
-  const filesJson = (await filesRes.json()) as { ok?: boolean; files?: unknown[] };
-  if (filesRes.ok && filesJson.ok) {
-    const files = Array.isArray(filesJson.files) ? filesJson.files : [];
-    setTeamFiles(normalizeFileListEntries(files));
-  }
-
-  const cronJson = (await cronRes.json()) as { ok?: boolean; jobs?: unknown[] };
-  if (cronRes.ok && cronJson.ok) {
-    setCronJobs(Array.isArray(cronJson.jobs) ? cronJson.jobs : []);
-  }
-
-  const agentsJson = (await agentsRes.json()) as { agents?: unknown[] };
-  if (agentsRes.ok) {
-    const all = Array.isArray(agentsJson.agents) ? agentsJson.agents : [];
-    const filtered = all.filter((a) => String((a as { id?: unknown }).id ?? "").startsWith(`${teamId}-`));
-    setTeamAgents(
-      filtered.map((a) => {
-        const agent = a as { id?: unknown; identityName?: unknown };
-        return { id: String(agent.id ?? ""), identityName: typeof agent.identityName === "string" ? agent.identityName : undefined };
-      })
-    );
-  }
-
-  const skillsJson = await skillsRes.json();
-  if (skillsRes.ok && skillsJson.ok) {
-    setSkillsList(Array.isArray(skillsJson.skills) ? skillsJson.skills : []);
-  }
-}
-
-type TeamTabId = "recipe" | "agents" | "skills" | "cron" | "files";
-
-function RecipeTabContent({
-  toId,
-  setToId,
-  toName,
-  setToName,
-  canEditTargetId,
-  fromId,
-  setFromId,
-  teamRecipes,
-  lockedFromId,
-  lockedFromName,
-  provenanceMissing,
-  content,
-  setContent,
-  loadingSource,
-  targetIdValid,
-  targetIsBuiltin,
-  teamIdValid,
-  saving,
-  onLoadTeamRecipeMarkdown,
-  onSaveCustom,
-  setCloneNonce,
-  setCloneOpen,
-  setDeleteOpen,
-}: {
-  toId: string;
-  setToId: (v: string) => void;
-  toName: string;
-  setToName: (v: string) => void;
-  canEditTargetId: boolean;
-  fromId: string;
-  setFromId: (v: string) => void;
-  teamRecipes: RecipeListItem[];
-  lockedFromId: string | null;
-  lockedFromName: string | null;
-  provenanceMissing: boolean;
+type RecipeDetail = RecipeListItem & {
   content: string;
-  setContent: (v: string) => void;
-  loadingSource: boolean;
-  targetIdValid: boolean;
-  targetIsBuiltin: boolean;
-  teamIdValid: boolean;
-  saving: boolean;
-  onLoadTeamRecipeMarkdown: () => void;
-  onSaveCustom: (overwrite: boolean) => void;
-  setCloneNonce: (fn: (n: number) => number) => void;
-  setCloneOpen: (v: boolean) => void;
-  setDeleteOpen: (v: boolean) => void;
-}) {
-  return (
-    <>
-      <div className="mt-6 grid grid-cols-1 gap-4 lg:grid-cols-2">
-        <div className="ck-glass-strong p-4">
-          <div className="text-sm font-medium text-[color:var(--ck-text-primary)]">Custom recipe target</div>
-          <label className="mt-3 block text-xs font-medium text-[color:var(--ck-text-secondary)]">Team id</label>
-          <input
-            value={toId}
-            onChange={(e) => setToId(e.target.value)}
-            disabled={!canEditTargetId}
-            className="mt-1 w-full rounded-[var(--ck-radius-sm)] border border-white/10 bg-black/25 px-3 py-2 text-sm text-[color:var(--ck-text-primary)] disabled:opacity-70"
-          />
-          <div className="mt-1 text-xs text-[color:var(--ck-text-tertiary)]">
-            This is the <b>custom recipe id</b> that will be created/overwritten when you save.
-          </div>
+  filePath: string | null;
+};
 
-          <label className="mt-3 block text-xs font-medium text-[color:var(--ck-text-secondary)]">Team name</label>
-          <input
-            value={toName}
-            onChange={(e) => setToName(e.target.value)}
-            className="mt-1 w-full rounded-[var(--ck-radius-sm)] border border-white/10 bg-black/25 px-3 py-2 text-sm text-[color:var(--ck-text-primary)]"
-          />
 
-          <div className="mt-4 grid grid-cols-1 gap-2">
-            <button
-              type="button"
-              disabled={loadingSource || !targetIdValid || targetIsBuiltin}
-              onClick={(e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                void onLoadTeamRecipeMarkdown();
-              }}
-              className="rounded-[var(--ck-radius-sm)] border border-white/10 bg-white/5 px-3 py-2 text-sm font-medium text-[color:var(--ck-text-primary)] shadow-[var(--ck-shadow-1)] transition-colors hover:bg-white/10 active:bg-white/15 disabled:opacity-60"
-            >
-              {loadingSource ? "Loading…" : "Load team markdown"}
-            </button>
+function forceFrontmatterId(md: string, id: string) {
+  if (!md.startsWith("---\n")) return md;
+  const end = md.indexOf("\n---\n", 4);
+  if (end === -1) return md;
+  const fm = md.slice(4, end);
+  const body = md.slice(end + 5);
 
-            <button
-              disabled={saving || !teamIdValid || !targetIdValid || targetIsBuiltin}
-              onClick={() => onSaveCustom(true)}
-              className="rounded-[var(--ck-radius-sm)] bg-[var(--ck-accent-red)] px-3 py-2 text-sm font-medium text-white shadow-[var(--ck-shadow-1)] transition-colors hover:bg-[var(--ck-accent-red-hover)] active:bg-[var(--ck-accent-red-active)] disabled:opacity-50"
-            >
-              {saving ? "Saving…" : "Save"}
-            </button>
-
-            <button
-              disabled={saving || !teamIdValid || targetIsBuiltin}
-              onClick={() => {
-                setCloneNonce((n) => n + 1);
-                setCloneOpen(true);
-              }}
-              className="rounded-[var(--ck-radius-sm)] border border-white/10 bg-white/5 px-3 py-2 text-sm font-medium text-[color:var(--ck-text-primary)] shadow-[var(--ck-shadow-1)] transition-colors hover:bg-white/10 active:bg-white/15 disabled:opacity-50"
-            >
-              Clone Team
-            </button>
-
-            <button
-              disabled={saving}
-              onClick={() => setDeleteOpen(true)}
-              className="rounded-[var(--ck-radius-sm)] border border-white/10 bg-white/5 px-3 py-2 text-sm font-medium text-[color:var(--ck-text-primary)] shadow-[var(--ck-shadow-1)] transition-colors hover:bg-white/10 active:bg-white/15 disabled:opacity-50"
-            >
-              Delete Team
-            </button>
-          </div>
-        </div>
-
-        <div className="ck-glass-strong p-4">
-          <div className="text-sm font-medium text-[color:var(--ck-text-primary)]">Notes</div>
-
-          <div className="mt-3 rounded-[var(--ck-radius-sm)] border border-white/10 bg-black/20 p-3">
-            <div className="text-xs font-medium text-[color:var(--ck-text-secondary)]">Parent recipe (locked)</div>
-            <select
-              disabled
-              className="mt-2 w-full rounded-[var(--ck-radius-sm)] border border-white/10 bg-black/25 px-3 py-2 text-sm text-[color:var(--ck-text-primary)] disabled:opacity-70"
-              value={fromId}
-              onChange={(e) => setFromId(e.target.value)}
-            >
-              {teamRecipes.map((r) => (
-                <option key={`${r.source}:${r.id}`} value={r.id}>
-                  {r.id} ({r.source})
-                </option>
-              ))}
-            </select>
-            {lockedFromId && (
-              <div className="mt-2 text-xs text-[color:var(--ck-text-tertiary)]">
-                <code>{lockedFromId}</code>
-                {lockedFromName ? ` (${lockedFromName})` : ""}
-              </div>
-            )}
-            {!lockedFromId && provenanceMissing && (
-              <div className="mt-2 text-xs text-[color:var(--ck-text-tertiary)]">
-                Provenance not found for this team. The parent recipe above is a best-guess.
-              </div>
-            )}
-          </div>
-
-          <ul className="mt-4 list-disc space-y-1 pl-5 text-sm text-[color:var(--ck-text-secondary)]">
-            <li>
-              <strong>Save</strong> writes/overwrites the custom recipe file identified by &quot;Team id&quot;.
-            </li>
-            <li>
-              <strong>Clone Team</strong> creates a new custom recipe copy (fails if it already exists).
-            </li>
-            <li>
-              <strong>Delete Team</strong> runs the safe uninstall command (<code>openclaw recipes remove-team</code>).
-            </li>
-          </ul>
-        </div>
-      </div>
-
-      <div className="mt-6 ck-glass-strong p-4">
-        <div className="text-sm font-medium text-[color:var(--ck-text-primary)]">Recipe markdown</div>
-        <textarea
-          value={content}
-          onChange={(e) => setContent(e.target.value)}
-          className="mt-2 h-[55vh] w-full resize-none rounded-[var(--ck-radius-sm)] border border-white/10 bg-black/25 p-3 font-mono text-xs text-[color:var(--ck-text-primary)]"
-          spellCheck={false}
-        />
-      </div>
-    </>
-  );
-}
-
-function AgentsTabContent({
-  toId,
-  newRole,
-  setNewRole,
-  newRoleName,
-  setNewRoleName,
-  teamAgents,
-  saving,
-  ensureCustomRecipeExists,
-  content,
-  setContent,
-  flashMessage,
-  setSaving,
-}: {
-  toId: string;
-  newRole: string;
-  setNewRole: (v: string) => void;
-  newRoleName: string;
-  setNewRoleName: (v: string) => void;
-  teamAgents: Pick<AgentListItem, "id" | "identityName">[];
-  saving: boolean;
-  ensureCustomRecipeExists: (args: { overwrite: boolean }) => Promise<unknown>;
-  content: string;
-  setContent: (v: string) => void;
-  flashMessage: (msg: string, kind?: FlashKind) => void;
-  setSaving: (v: boolean) => void;
-}) {
-  return (
-    <div className="mt-6 ck-glass-strong p-4">
-      <div className="text-sm font-medium text-[color:var(--ck-text-primary)]">Agents in this team</div>
-      <p className="mt-2 text-sm text-[color:var(--ck-text-secondary)]">
-        Thin slice: manage agents by editing the <code>agents:</code> list in your custom team recipe (<code>{toId}</code>).
-      </p>
-
-      <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-3">
-        <div>
-          <label className="block text-xs font-medium text-[color:var(--ck-text-secondary)]">Role</label>
-          <input
-            value={newRole}
-            onChange={(e) => setNewRole(e.target.value)}
-            placeholder="lead"
-            className="mt-1 w-full rounded-[var(--ck-radius-sm)] border border-white/10 bg-black/25 px-3 py-2 text-sm text-[color:var(--ck-text-primary)]"
-          />
-        </div>
-        <div className="sm:col-span-2">
-          <label className="block text-xs font-medium text-[color:var(--ck-text-secondary)]">Name (optional)</label>
-          <input
-            value={newRoleName}
-            onChange={(e) => setNewRoleName(e.target.value)}
-            placeholder="Dev Team Lead"
-            className="mt-1 w-full rounded-[var(--ck-radius-sm)] border border-white/10 bg-black/25 px-3 py-2 text-sm text-[color:var(--ck-text-primary)]"
-          />
-        </div>
-      </div>
-
-      <div className="mt-3 flex flex-wrap gap-2">
-        <button
-          disabled={saving}
-          onClick={() =>
-            updateTeamAgents(
-              { recipeId: toId.trim(), op: "add", role: newRole, name: newRoleName },
-              `Updated agents list in ${toId}`,
-              () => ensureCustomRecipeExists({ overwrite: false }),
-              content,
-              setContent,
-              flashMessage,
-              setSaving
-            )
-          }
-          className="rounded-[var(--ck-radius-sm)] bg-[var(--ck-accent-red)] px-3 py-2 text-sm font-medium text-white shadow-[var(--ck-shadow-1)] disabled:opacity-50"
-        >
-          Add / Update role
-        </button>
-        <button
-          disabled={saving}
-          onClick={() =>
-            updateTeamAgents(
-              { recipeId: toId.trim(), op: "remove", role: newRole },
-              `Removed role ${newRole} from ${toId}`,
-              () => ensureCustomRecipeExists({ overwrite: false }),
-              content,
-              setContent,
-              flashMessage,
-              setSaving
-            )
-          }
-          className="rounded-[var(--ck-radius-sm)] border border-white/10 bg-white/5 px-3 py-2 text-sm font-medium text-[color:var(--ck-text-primary)] shadow-[var(--ck-shadow-1)] hover:bg-white/10 disabled:opacity-50"
-        >
-          Remove role
-        </button>
-      </div>
-
-      <div className="mt-6">
-        <div className="text-xs font-medium text-[color:var(--ck-text-secondary)]">Detected installed team agents (read-only)</div>
-        <ul className="mt-2 space-y-2">
-          {teamAgents.length ? (
-            teamAgents.map((a) => (
-              <li key={a.id} className="flex items-center justify-between gap-3">
-                <div className="min-w-0">
-                  <div className="truncate text-sm font-medium text-[color:var(--ck-text-primary)]">
-                    {a.identityName || a.id}
-                  </div>
-                  <div className="text-xs text-[color:var(--ck-text-secondary)]">{a.id}</div>
-                </div>
-                <a
-                  className="text-sm font-medium text-[color:var(--ck-accent-red)] hover:text-[color:var(--ck-accent-red-hover)]"
-                  href={`/agents/${encodeURIComponent(a.id)}`}
-                >
-                  Edit
-                </a>
-              </li>
-            ))
-          ) : (
-            <li className="text-sm text-[color:var(--ck-text-secondary)]">No team agents detected.</li>
-          )}
-        </ul>
-      </div>
-    </div>
-  );
-}
-
-function SkillsTabContent({ skillsList }: { skillsList: string[] }) {
-  return (
-    <div className="mt-6 ck-glass-strong p-4">
-      <div className="text-sm font-medium text-[color:var(--ck-text-primary)]">Installed skills (team workspace)</div>
-      <ul className="mt-3 list-disc space-y-1 pl-5 text-sm text-[color:var(--ck-text-secondary)]">
-        {skillsList.length ? skillsList.map((s) => <li key={s}>{s}</li>) : <li>No skills installed.</li>}
-      </ul>
-    </div>
-  );
-}
-
-function CronTabContent({
-  cronJobs,
-  saving,
-  setSaving,
-  flashMessage,
-}: {
-  cronJobs: unknown[];
-  saving: boolean;
-  setSaving: (v: boolean) => void;
-  flashMessage: (msg: string, kind?: FlashKind) => void;
-}) {
-  return (
-    <div className="mt-6 ck-glass-strong p-4">
-      <div className="text-sm font-medium text-[color:var(--ck-text-primary)]">Cron jobs (filtered by team name)</div>
-      <ul className="mt-3 space-y-3">
-        {cronJobs.length ? (
-          cronJobs.map((j) => (
-            <CronJobListItem
-              key={cronJobId(j) || cronJobLabel(j) || "job"}
-              job={j}
-              saving={saving}
-              setSaving={setSaving}
-              flashMessage={flashMessage}
-            />
-          ))
-        ) : (
-          <li className="text-sm text-[color:var(--ck-text-secondary)]">No cron jobs detected for this team.</li>
-        )}
-      </ul>
-    </div>
-  );
-}
-
-function FilesTabContent({
-  teamFiles,
-  fileName,
-  fileContent,
-  setFileContent,
-  showOptionalFiles,
-  setShowOptionalFiles,
-  saving,
-  onLoadTeamFile,
-  onSaveTeamFile,
-}: {
-  teamFiles: FileListEntry[];
-  fileName: string;
-  fileContent: string;
-  setFileContent: (v: string) => void;
-  showOptionalFiles: boolean;
-  setShowOptionalFiles: (v: boolean) => void;
-  saving: boolean;
-  onLoadTeamFile: (name: string) => void;
-  onSaveTeamFile: () => void;
-}) {
-  return (
-    <div className="mt-6 grid grid-cols-1 gap-4 lg:grid-cols-3">
-      <WorkspaceFileListSidebar
-        title="Team files"
-        files={teamFiles}
-        selectedFileName={fileName}
-        onSelectFile={onLoadTeamFile}
-        showOptionalFiles={showOptionalFiles}
-        setShowOptionalFiles={setShowOptionalFiles}
-      />
-
-      <div className="ck-glass-strong p-4 lg:col-span-2">
-        <div className="flex items-center justify-between gap-3">
-          <div className="text-sm font-medium text-[color:var(--ck-text-primary)]">Edit: {fileName}</div>
-          <button
-            disabled={saving}
-            onClick={onSaveTeamFile}
-            className="rounded-[var(--ck-radius-sm)] bg-[var(--ck-accent-red)] px-3 py-2 text-sm font-medium text-white shadow-[var(--ck-shadow-1)] disabled:opacity-50"
-          >
-            {saving ? "Saving…" : "Save file"}
-          </button>
-        </div>
-        <textarea
-          value={fileContent}
-          onChange={(e) => setFileContent(e.target.value)}
-          className="mt-3 h-[55vh] w-full resize-none rounded-[var(--ck-radius-sm)] border border-white/10 bg-black/25 p-3 font-mono text-xs text-[color:var(--ck-text-primary)]"
-          spellCheck={false}
-        />
-      </div>
-    </div>
-  );
-}
-
-function renderTeamTabPanel(
-  activeTab: TeamTabId,
-  state: {
-    toId: string;
-    setToId: (v: string) => void;
-    toName: string;
-    setToName: (v: string) => void;
-    canEditTargetId: boolean;
-    fromId: string;
-    setFromId: (v: string) => void;
-    teamRecipes: RecipeListItem[];
-    lockedFromId: string | null;
-    lockedFromName: string | null;
-    provenanceMissing: boolean;
-    content: string;
-    setContent: (v: string) => void;
-    loadingSource: boolean;
-    targetIdValid: boolean;
-    targetIsBuiltin: boolean;
-    teamIdValid: boolean;
-    saving: boolean;
-    onLoadTeamRecipeMarkdown: () => void;
-    onSaveCustom: (overwrite: boolean) => void;
-    setCloneNonce: (fn: (n: number) => number) => void;
-    setCloneOpen: (v: boolean) => void;
-    setDeleteOpen: (v: boolean) => void;
-    newRole: string;
-    setNewRole: (v: string) => void;
-    newRoleName: string;
-    setNewRoleName: (v: string) => void;
-    teamAgents: Pick<AgentListItem, "id" | "identityName">[];
-    ensureCustomRecipeExists: (args: { overwrite: boolean }) => Promise<unknown>;
-    flashMessage: (msg: string, kind?: FlashKind) => void;
-    setSaving: (v: boolean) => void;
-    skillsList: string[];
-    cronJobs: unknown[];
-    teamFiles: FileListEntry[];
-    fileName: string;
-    fileContent: string;
-    setFileContent: (v: string) => void;
-    showOptionalFiles: boolean;
-    setShowOptionalFiles: (v: boolean) => void;
-    onLoadTeamFile: (name: string) => void;
-    onSaveTeamFile: () => void;
-  }
-) {
-  switch (activeTab) {
-    case "recipe":
-      return (
-        <RecipeTabContent
-          toId={state.toId}
-          setToId={state.setToId}
-          toName={state.toName}
-          setToName={state.setToName}
-          canEditTargetId={state.canEditTargetId}
-          fromId={state.fromId}
-          setFromId={state.setFromId}
-          teamRecipes={state.teamRecipes}
-          lockedFromId={state.lockedFromId}
-          lockedFromName={state.lockedFromName}
-          provenanceMissing={state.provenanceMissing}
-          content={state.content}
-          setContent={state.setContent}
-          loadingSource={state.loadingSource}
-          targetIdValid={state.targetIdValid}
-          targetIsBuiltin={state.targetIsBuiltin}
-          teamIdValid={state.teamIdValid}
-          saving={state.saving}
-          onLoadTeamRecipeMarkdown={state.onLoadTeamRecipeMarkdown}
-          onSaveCustom={state.onSaveCustom}
-          setCloneNonce={state.setCloneNonce}
-          setCloneOpen={state.setCloneOpen}
-          setDeleteOpen={state.setDeleteOpen}
-        />
-      );
-    case "agents":
-      return (
-        <AgentsTabContent
-          toId={state.toId}
-          newRole={state.newRole}
-          setNewRole={state.setNewRole}
-          newRoleName={state.newRoleName}
-          setNewRoleName={state.setNewRoleName}
-          teamAgents={state.teamAgents}
-          saving={state.saving}
-          ensureCustomRecipeExists={state.ensureCustomRecipeExists}
-          content={state.content}
-          setContent={state.setContent}
-          flashMessage={state.flashMessage}
-          setSaving={state.setSaving}
-        />
-      );
-    case "skills":
-      return <SkillsTabContent skillsList={state.skillsList} />;
-    case "cron":
-      return (
-        <CronTabContent
-          cronJobs={state.cronJobs}
-          saving={state.saving}
-          setSaving={state.setSaving}
-          flashMessage={state.flashMessage}
-        />
-      );
-    case "files":
-      return (
-        <FilesTabContent
-          teamFiles={state.teamFiles}
-          fileName={state.fileName}
-          fileContent={state.fileContent}
-          setFileContent={state.setFileContent}
-          showOptionalFiles={state.showOptionalFiles}
-          setShowOptionalFiles={state.setShowOptionalFiles}
-          saving={state.saving}
-          onLoadTeamFile={state.onLoadTeamFile}
-          onSaveTeamFile={state.onSaveTeamFile}
-        />
-      );
-    default:
-      return null;
-  }
-}
-
-function CronJobListItem({
-  job,
-  saving,
-  setSaving,
-  flashMessage,
-}: {
-  job: unknown;
-  saving: boolean;
-  setSaving: (v: boolean) => void;
-  flashMessage: (msg: string, kind?: FlashKind) => void;
-}) {
-  const j = job as CronJobShape;
-  const id = cronJobId(j);
-  const label = cronJobLabel(j);
-  const enabled = j.enabled ?? j.state?.enabled;
-
-  async function onCronAction(action: "enable" | "disable" | "run") {
-    setSaving(true);
-    try {
-      const res = await fetch("/api/cron/job", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ id, action }),
-      });
-      const json = await res.json();
-      if (!res.ok || !json.ok) throw new Error(json.error || "Cron action failed");
-      flashMessage(`Cron ${action}: ${label}`, "success");
-    } catch (e: unknown) {
-      flashMessage(errorMessage(e), "error");
-    } finally {
-      setSaving(false);
+  const lines = fm.split("\n");
+  let found = false;
+  const nextLines = lines.map((line) => {
+    if (/^id\s*:/i.test(line)) {
+      found = true;
+      return `id: ${id}`;
     }
+    return line;
+  });
+  if (!found) nextLines.unshift(`id: ${id}`);
+
+  return `---\n${nextLines.join("\n")}\n---\n${body}`;
+}
+
+function forceFrontmatterTeamTeamId(md: string, teamId: string) {
+  // Best-effort YAML frontmatter patch without reparsing the whole recipe.
+  // Goal: ensure `team: { teamId: <id> }` matches the custom recipe id after Save.
+  if (!md.startsWith("---\n")) return md;
+  const end = md.indexOf("\n---\n", 4);
+  if (end === -1) return md;
+
+  const fm = md.slice(4, end);
+  const body = md.slice(end + 5);
+  const lines = fm.split("\n");
+
+  const next: string[] = [];
+  let inTeam = false;
+  let sawTeamBlock = false;
+  let patched = false;
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    if (/^team\s*:\s*$/i.test(line)) {
+      inTeam = true;
+      sawTeamBlock = true;
+      next.push(line);
+      continue;
+    }
+
+    // Leave team block when indentation returns to column 0.
+    if (inTeam && /^\S/.test(line)) {
+      inTeam = false;
+    }
+
+    if (inTeam && /^\s+teamId\s*:/i.test(line)) {
+      next.push(`  teamId: ${teamId}`);
+      patched = true;
+      continue;
+    }
+
+    next.push(line);
   }
 
-  return (
-    <li className="rounded-[var(--ck-radius-sm)] border border-white/10 bg-black/20 p-3">
-      <div className="font-medium text-[color:var(--ck-text-primary)]">{label}</div>
-      <div className="mt-1 text-xs text-[color:var(--ck-text-secondary)]">Enabled: {String(enabled ?? "?")}</div>
-      <div className="mt-2 flex flex-wrap gap-2">
-        <button
-          disabled={saving || !id}
-          onClick={() => onCronAction("run")}
-          className="rounded-[var(--ck-radius-sm)] border border-white/10 bg-white/5 px-2.5 py-1.5 text-xs font-medium text-[color:var(--ck-text-primary)] hover:bg-white/10 disabled:opacity-50"
-        >
-          Run
-        </button>
-        <button
-          disabled={saving || !id}
-          onClick={() => onCronAction("enable")}
-          className="rounded-[var(--ck-radius-sm)] border border-white/10 bg-white/5 px-2.5 py-1.5 text-xs font-medium text-[color:var(--ck-text-primary)] hover:bg-white/10 disabled:opacity-50"
-        >
-          Enable
-        </button>
-        <button
-          disabled={saving || !id}
-          onClick={() => onCronAction("disable")}
-          className="rounded-[var(--ck-radius-sm)] border border-white/10 bg-white/5 px-2.5 py-1.5 text-xs font-medium text-[color:var(--ck-text-primary)] hover:bg-white/10 disabled:opacity-50"
-        >
-          Disable
-        </button>
-        {!id ? <div className="text-xs text-[color:var(--ck-text-tertiary)]">(missing id)</div> : null}
-      </div>
-    </li>
-  );
+  // If there was a team block but no teamId, insert it right after `team:`.
+  if (sawTeamBlock && !patched) {
+    const out: string[] = [];
+    for (let i = 0; i < next.length; i++) {
+      out.push(next[i]);
+      if (/^team\s*:\s*$/i.test(next[i])) {
+        out.push(`  teamId: ${teamId}`);
+      }
+    }
+    return `---\n${out.join("\n")}\n---\n${body}`;
+  }
+
+  return `---\n${next.join("\n")}\n---\n${body}`;
 }
 
 export default function TeamEditor({ teamId }: { teamId: string }) {
@@ -726,34 +105,75 @@ export default function TeamEditor({ teamId }: { teamId: string }) {
   const [toId, setToId] = useState<string>(teamId);
   const [toName, setToName] = useState<string>(teamId);
   const [content, setContent] = useState<string>("");
+  const [loadedRecipeHash, setLoadedRecipeHash] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<"recipe" | "agents" | "skills" | "cron" | "files">("recipe");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [publishing, setPublishing] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const [loadingSource, setLoadingSource] = useState(false);
+  const [recipeLoadError, setRecipeLoadError] = useState<string>("");
   const toast = useToast();
 
-  const [cloneOpen, setCloneOpen] = useState(false);
-  const [cloneNonce, setCloneNonce] = useState(0);
   const [deleteOpen, setDeleteOpen] = useState(false);
+  const [publishOpen, setPublishOpen] = useState(false);
 
-  const flashMessage = useCallback(
-    (next: string, kind: FlashKind = "info") => {
-      const msg = String(next ?? "").trim();
-      if (!msg) return;
-      toast.push({ kind, message: msg });
-    },
-    [toast]
-  );
+  const [teamMetaRecipeHash, setTeamMetaRecipeHash] = useState<string | null>(null);
 
-  const [teamFiles, setTeamFiles] = useState<FileListEntry[]>([]);
+  function flashMessage(next: string, kind: "success" | "error" | "info" = "info") {
+    const msg = String(next ?? "").trim();
+    if (!msg) return;
+    toast.push({ kind, message: msg });
+  }
+
+  const [teamFiles, setTeamFiles] = useState<Array<{ name: string; missing: boolean; required: boolean; rationale?: string }>>([]);
+  const [teamFilesLoading, setTeamFilesLoading] = useState(false);
+  const [teamFileError, setTeamFileError] = useState<string>("");
   const [showOptionalFiles, setShowOptionalFiles] = useState(false);
   const [fileName, setFileName] = useState<string>("SOUL.md");
   const [fileContent, setFileContent] = useState<string>("");
+
   const [cronJobs, setCronJobs] = useState<unknown[]>([]);
-  const [teamAgents, setTeamAgents] = useState<Pick<AgentListItem, "id" | "identityName">[]>([]);
+  const [cronLoading, setCronLoading] = useState(false);
+
+  const [teamAgents, setTeamAgents] = useState<Array<{ id: string; identityName?: string }>>([]);
+  const [teamAgentsLoading, setTeamAgentsLoading] = useState(false);
+
+  const recipeAgents = useMemo(() => {
+    const md = String(content ?? "");
+    if (!md.startsWith("---\n")) return [] as Array<{ role: string; name?: string }>;
+    const end = md.indexOf("\n---\n", 4);
+    if (end === -1) return [] as Array<{ role: string; name?: string }>;
+    const fmText = md.slice(4, end + 1);
+    try {
+      const fm = (parseYaml(fmText) ?? {}) as { agents?: unknown };
+      const agents = Array.isArray(fm.agents) ? fm.agents : [];
+      return agents
+        .map((a) => a as { role?: unknown; name?: unknown })
+        .map((a) => ({ role: String(a.role ?? "").trim(), name: typeof a.name === "string" ? a.name : undefined }))
+        .filter((a) => Boolean(a.role));
+    } catch {
+      return [] as Array<{ role: string; name?: string }>;
+    }
+  }, [content]);
+
   const [newRole, setNewRole] = useState<string>("");
+  const [customRole, setCustomRole] = useState<string>("");
   const [newRoleName, setNewRoleName] = useState<string>("");
+
+  const derivedRole = useMemo(() => {
+    const v = (newRole === "__custom__" ? customRole : newRole).trim();
+    if (!v) return "";
+    return v;
+  }, [newRole, customRole]);
+
   const [skillsList, setSkillsList] = useState<string[]>([]);
+  const [availableSkills, setAvailableSkills] = useState<string[]>([]);
+  const [skillsLoading, setSkillsLoading] = useState(false);
+  const [selectedSkill, setSelectedSkill] = useState<string>("");
+  const [installingSkill, setInstallingSkill] = useState(false);
+  const [teamSkillMsg, setTeamSkillMsg] = useState<string>("");
+  const [teamSkillError, setTeamSkillError] = useState<string>("");
 
   const teamRecipes = useMemo(() => recipes.filter((r) => r.kind === "team"), [recipes]);
 
@@ -775,55 +195,202 @@ export default function TeamEditor({ teamId }: { teamId: string }) {
   useEffect(() => {
     setToId(teamId);
     setToName(teamId);
+    setContent("");
+    setLoadedRecipeHash(null);
+    setTeamMetaRecipeHash(null);
+    setPublishOpen(false);
+    setDeleteOpen(false);
   }, [teamId]);
 
-  const loadTeamData = useCallback(async () => {
-    setLoading(true);
-    try {
-      const [recipesRes, metaRes] = await Promise.all([
-        fetch("/api/recipes", { cache: "no-store" }),
-        fetch(`/api/teams/meta?teamId=${encodeURIComponent(teamId)}`, { cache: "no-store" }),
-      ]);
-
-      const json = await recipesRes.json();
-      const list = (json.recipes ?? []) as RecipeListItem[];
-      setRecipes(list);
-
-      const locked = await parseMetaForLocked(metaRes);
-      applyLockedOrFallback(locked, list, teamId, setLockedFromId, setLockedFromName, setProvenanceMissing, setFromId);
-
-      await loadAncillaryData(teamId, setTeamFiles, setCronJobs, setTeamAgents, setSkillsList);
-    } catch (e: unknown) {
-      flashMessage(errorMessage(e), "error");
-    } finally {
-      setLoading(false);
-    }
-  }, [teamId, flashMessage]);
-
   useEffect(() => {
-    void loadTeamData();
-  }, [loadTeamData]);
+    (async () => {
+      setLoading(true);
+      try {
+        const [recipesRes, metaRes] = await Promise.all([
+          fetch("/api/recipes", { cache: "no-store" }),
+          fetch(`/api/teams/meta?teamId=${encodeURIComponent(teamId)}`, { cache: "no-store" }),
+        ]);
+
+        const json = await recipesRes.json();
+        const list = (json.recipes ?? []) as RecipeListItem[];
+        setRecipes(list);
+
+        // Note: do not sync toName/toId from remote state here.
+        // Edits to the target id/name must not trigger reload loops while typing.
+
+        // Prefer a recipe that corresponds to this teamId.
+        // Primary source of truth: provenance stored in the team workspace.
+        // Fallback: heuristic matching (legacy teams without provenance).
+        let locked: { recipeId: string; recipeName?: string } | null = null;
+        try {
+          const metaJson = await metaRes.json();
+          if (metaRes.ok && metaJson.ok && metaJson.meta && (metaJson.meta as { recipeId?: unknown }).recipeId) {
+            const m = metaJson.meta as { recipeId?: unknown; recipeName?: unknown; recipeHash?: unknown };
+            locked = {
+              recipeId: String(m.recipeId),
+              recipeName: typeof m.recipeName === "string" ? m.recipeName : undefined,
+            };
+            const h = typeof m.recipeHash === "string" ? m.recipeHash : null;
+            setTeamMetaRecipeHash(h);
+          } else {
+            setTeamMetaRecipeHash(null);
+          }
+        } catch {
+          // ignore
+        }
+
+        if (locked) {
+          setLockedFromId(locked.recipeId);
+          setLockedFromName(locked.recipeName ?? null);
+          setProvenanceMissing(false);
+          setFromId(locked.recipeId);
+        } else {
+          setLockedFromId(null);
+          setLockedFromName(null);
+          setProvenanceMissing(true);
+
+          const preferred = list.find((r) => r.kind === "team" && r.id === teamId);
+          const fallback = list.find((r) => r.kind === "team");
+          const pick = preferred ?? fallback;
+          if (pick) setFromId(pick.id);
+        }
+
+        // Render ASAP; load the heavier per-tab data in the background.
+        setLoading(false);
+
+        void (async () => {
+          setTeamFilesLoading(true);
+          setCronLoading(true);
+          setTeamAgentsLoading(true);
+          setSkillsLoading(true);
+
+          try {
+            const [filesRes, cronRes, agentsRes, skillsRes, availableSkillsRes] = await Promise.all([
+              fetch(`/api/teams/files?teamId=${encodeURIComponent(teamId)}`, { cache: "no-store" }),
+              fetch(`/api/cron/jobs?teamId=${encodeURIComponent(teamId)}`, { cache: "no-store" }),
+              fetch("/api/agents", { cache: "no-store" }),
+              fetch(`/api/teams/skills?teamId=${encodeURIComponent(teamId)}`, { cache: "no-store" }),
+              fetch("/api/skills/available", { cache: "no-store" }),
+            ]);
+
+            try {
+              const filesJson = (await filesRes.json()) as { ok?: boolean; files?: unknown[] };
+              if (filesRes.ok && filesJson.ok) {
+                const files = Array.isArray(filesJson.files) ? filesJson.files : [];
+                setTeamFiles(
+                  files.map((f) => {
+                    const entry = f as { name?: unknown; missing?: unknown; required?: unknown; rationale?: unknown };
+                    return {
+                      name: String(entry.name ?? ""),
+                      missing: Boolean(entry.missing),
+                      required: Boolean(entry.required),
+                      rationale: typeof entry.rationale === "string" ? entry.rationale : undefined,
+                    };
+                  }),
+                );
+              }
+            } catch {
+              // ignore
+            }
+
+            try {
+              const cronJson = (await cronRes.json()) as { ok?: boolean; jobs?: unknown[] };
+              if (cronRes.ok && cronJson.ok) {
+                const all = Array.isArray(cronJson.jobs) ? cronJson.jobs : [];
+                setCronJobs(all);
+              }
+            } catch {
+              // ignore
+            }
+
+            try {
+              const agentsJson = (await agentsRes.json()) as { agents?: unknown[] };
+              if (agentsRes.ok) {
+                const all = Array.isArray(agentsJson.agents) ? agentsJson.agents : [];
+                // Team membership for agents is by id convention: <teamId>-<role>
+                const filtered = all.filter((a) => String((a as { id?: unknown }).id ?? "").startsWith(`${teamId}-`));
+                setTeamAgents(
+                  filtered.map((a) => {
+                    const agent = a as { id?: unknown; identityName?: unknown };
+                    return { id: String(agent.id ?? ""), identityName: typeof agent.identityName === "string" ? agent.identityName : undefined };
+                  }),
+                );
+              }
+            } catch {
+              // ignore
+            }
+
+            try {
+              const skillsJson = await skillsRes.json();
+              if (skillsRes.ok && skillsJson.ok) {
+                setSkillsList(Array.isArray(skillsJson.skills) ? (skillsJson.skills as string[]) : []);
+              }
+            } catch {
+              // ignore
+            }
+
+            try {
+              const availableSkillsJson = (await availableSkillsRes.json()) as { ok?: boolean; skills?: unknown[] };
+              if (availableSkillsRes.ok && availableSkillsJson.ok) {
+                const list = Array.isArray(availableSkillsJson.skills) ? (availableSkillsJson.skills as string[]) : [];
+                setAvailableSkills(list);
+                setSelectedSkill((prev) => {
+                  const p = String(prev ?? "").trim();
+                  if (p && list.includes(p)) return p;
+                  return list[0] ?? "";
+                });
+              }
+            } catch {
+              // ignore
+            }
+          } finally {
+            setTeamFilesLoading(false);
+            setCronLoading(false);
+            setTeamAgentsLoading(false);
+            setSkillsLoading(false);
+          }
+        })();
+      } catch (e: unknown) {
+        flashMessage(e instanceof Error ? e.message : String(e), "error");
+      } finally {
+        // If the happy-path already flipped loading=false early, this is a no-op.
+        setLoading(false);
+      }
+    })();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [teamId]);
 
   async function onLoadTeamRecipeMarkdown() {
     const id = toId.trim();
     if (!id) return;
     setLoadingSource(true);
+    setRecipeLoadError("");
     try {
       const res = await fetch(`/api/recipes/${encodeURIComponent(id)}`, { cache: "no-store" });
       const json = await res.json();
       if (!res.ok) {
         // Usually means the workspace recipe doesn't exist yet.
-        throw new Error(json.error || `Recipe not found: ${id}. Save or Clone first to create it.`);
+        throw new Error(json.error || `Recipe not found: ${id}. Save first to create it.`);
       }
       const r = json.recipe as RecipeDetail;
       setContent(r.content);
-      flashMessage(`Loaded team recipe: ${r.id}`, "success");
+      setLoadedRecipeHash(typeof json.recipeHash === "string" ? json.recipeHash : null);
     } catch (e: unknown) {
-      flashMessage(errorMessage(e), "error");
+      setRecipeLoadError(e instanceof Error ? e.message : String(e));
     } finally {
       setLoadingSource(false);
     }
   }
+
+  // Load raw recipe markdown by default (no "click to load").
+  useEffect(() => {
+    const id = toId.trim();
+    if (!id) return;
+    if (content.trim()) return;
+    if (loadingSource) return;
+    void onLoadTeamRecipeMarkdown();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [toId]);
 
   async function ensureCustomRecipeExists(args: { overwrite: boolean; toId?: string; toName?: string; scaffold?: boolean }) {
     const f = fromId.trim();
@@ -860,7 +427,7 @@ export default function TeamEditor({ teamId }: { teamId: string }) {
       const hasEdits = Boolean(content.trim()) && content.trim() !== json.content.trim();
 
       if (hasEdits) {
-        const nextContent = forceFrontmatterId(content, toId.trim());
+        const nextContent = forceFrontmatterTeamTeamId(forceFrontmatterId(content, toId.trim()), toId.trim());
         const res = await fetch(`/api/recipes/${encodeURIComponent(toId.trim())}`, {
           method: "PUT",
           headers: { "content-type": "application/json" },
@@ -873,9 +440,18 @@ export default function TeamEditor({ teamId }: { teamId: string }) {
         setContent(json.content);
       }
 
+      // Refresh hash from server so Publish can reliably detect unpropagated changes.
+      try {
+        const res = await fetch(`/api/recipes/${encodeURIComponent(toId.trim())}`, { cache: "no-store" });
+        const next = await res.json();
+        if (res.ok && typeof next.recipeHash === "string") setLoadedRecipeHash(next.recipeHash);
+      } catch {
+        setLoadedRecipeHash(null);
+      }
+
       flashMessage(`Saved team recipe: ${json.filePath}`, "success");
     } catch (e: unknown) {
-      const raw = errorMessage(e);
+      const raw = e instanceof Error ? e.message : String(e);
       flashMessage(raw, "error");
     } finally {
       setSaving(false);
@@ -884,6 +460,7 @@ export default function TeamEditor({ teamId }: { teamId: string }) {
 
   async function onLoadTeamFile(name: string) {
     setSaving(true);
+    setTeamFileError("");
     try {
       const res = await fetch(
         `/api/teams/file?teamId=${encodeURIComponent(teamId)}&name=${encodeURIComponent(name)}`,
@@ -894,7 +471,7 @@ export default function TeamEditor({ teamId }: { teamId: string }) {
       setFileName(name);
       setFileContent(String(json.content ?? ""));
     } catch (e: unknown) {
-      flashMessage(errorMessage(e), "error");
+      setTeamFileError(e instanceof Error ? e.message : String(e));
     } finally {
       setSaving(false);
     }
@@ -902,6 +479,7 @@ export default function TeamEditor({ teamId }: { teamId: string }) {
 
   async function onSaveTeamFile() {
     setSaving(true);
+    setTeamFileError("");
     try {
       const res = await fetch("/api/teams/file", {
         method: "PUT",
@@ -910,14 +488,15 @@ export default function TeamEditor({ teamId }: { teamId: string }) {
       });
       const json = await res.json();
       if (!res.ok || !json.ok) throw new Error(json.error || "Failed to save file");
-      flashMessage(`Saved ${fileName}`, "success");
+      // No toast; keep file-related messaging local.
     } catch (e: unknown) {
-      flashMessage(errorMessage(e), "error");
+      setTeamFileError(e instanceof Error ? e.message : String(e));
     } finally {
       setSaving(false);
     }
   }
 
+  // Initial load only gates the minimal state (recipes + team meta). Everything else streams in.
   if (loading) return <div className="ck-glass mx-auto max-w-4xl p-6">Loading…</div>;
 
   return (
@@ -940,79 +519,656 @@ export default function TeamEditor({ teamId }: { teamId: string }) {
           <button
             key={t.id}
             onClick={() => setActiveTab(t.id)}
-            className={getTabButtonClass(activeTab, t.id)}
+            className={
+              activeTab === t.id
+                ? "rounded-[var(--ck-radius-sm)] bg-[var(--ck-accent-red)] px-3 py-2 text-sm font-medium text-white shadow-[var(--ck-shadow-1)]"
+                : "rounded-[var(--ck-radius-sm)] border border-white/10 bg-white/5 px-3 py-2 text-sm font-medium text-[color:var(--ck-text-primary)] shadow-[var(--ck-shadow-1)] hover:bg-white/10"
+            }
           >
             {t.label}
           </button>
         ))}
       </div>
 
-      {renderTeamTabPanel(activeTab, {
-        toId,
-        setToId,
-        toName,
-        setToName,
-        canEditTargetId,
-        fromId,
-        setFromId,
-        teamRecipes,
-        lockedFromId,
-        lockedFromName,
-        provenanceMissing,
-        content,
-        setContent,
-        loadingSource,
-        targetIdValid,
-        targetIsBuiltin,
-        teamIdValid,
-        saving,
-        onLoadTeamRecipeMarkdown,
-        onSaveCustom,
-        setCloneNonce,
-        setCloneOpen,
-        setDeleteOpen,
-        newRole,
-        setNewRole,
-        newRoleName,
-        setNewRoleName,
-        teamAgents,
-        ensureCustomRecipeExists,
-        flashMessage,
-        setSaving,
-        skillsList,
-        cronJobs,
-        teamFiles,
-        fileName,
-        fileContent,
-        setFileContent,
-        showOptionalFiles,
-        setShowOptionalFiles,
-        onLoadTeamFile,
-        onSaveTeamFile,
-      })}
+      {activeTab === "recipe" ? (
+        <div className="mt-6 grid grid-cols-1 gap-4 lg:grid-cols-2">
+          <div className="ck-glass-strong p-4">
+            <div className="text-sm font-medium text-[color:var(--ck-text-primary)]">Custom recipe target</div>
+            <label className="mt-3 block text-xs font-medium text-[color:var(--ck-text-secondary)]">Team id</label>
+            <input
+              value={toId}
+              onChange={(e) => setToId(e.target.value)}
+              disabled={!canEditTargetId}
+              className="mt-1 w-full rounded-[var(--ck-radius-sm)] border border-white/10 bg-black/25 px-3 py-2 text-sm text-[color:var(--ck-text-primary)] disabled:opacity-70"
+            />
+            <div className="mt-1 text-xs text-[color:var(--ck-text-tertiary)]">
+              This is the <b>custom recipe id</b> that will be created/overwritten when you save.
+            </div>
 
-      <CloneTeamModal
-        key={cloneNonce}
-        open={cloneOpen}
-        onClose={() => setCloneOpen(false)}
-        recipes={recipes}
-        onConfirm={async ({ id, name, scaffold }) => {
-          setCloneOpen(false);
-          // Set the target fields for UI, but DO NOT rely on them for the clone.
-          // Clone must use the modal-provided id/name.
-          setToId(id);
-          setToName(name);
-          await onSaveCustom(false, { toId: id, toName: name, scaffold });
+            <label className="mt-3 block text-xs font-medium text-[color:var(--ck-text-secondary)]">Team name</label>
+            <input
+              value={toName}
+              onChange={(e) => setToName(e.target.value)}
+              className="mt-1 w-full rounded-[var(--ck-radius-sm)] border border-white/10 bg-black/25 px-3 py-2 text-sm text-[color:var(--ck-text-primary)]"
+            />
+
+            <div className="mt-4 grid grid-cols-1 gap-2">
+              {/* Load team markdown removed (auto-loads by default). */}
+
+              <button
+                type="button"
+                disabled={saving || !teamIdValid || !targetIdValid || targetIsBuiltin}
+                onClick={() => onSaveCustom(true)}
+                className="rounded-[var(--ck-radius-sm)] bg-[var(--ck-accent-red)] px-3 py-2 text-sm font-medium text-white shadow-[var(--ck-shadow-1)] transition-colors hover:bg-[var(--ck-accent-red-hover)] active:bg-[var(--ck-accent-red-active)] disabled:opacity-50"
+              >
+                {saving ? "Saving…" : "Save"}
+              </button>
+
+              <button
+                type="button"
+                disabled={
+                  saving ||
+                  !teamIdValid ||
+                  !targetIdValid ||
+                  targetIsBuiltin ||
+                  // Enabled only when there are unpropagated (saved) changes.
+                  !loadedRecipeHash ||
+                  !teamMetaRecipeHash ||
+                  loadedRecipeHash === teamMetaRecipeHash
+                }
+                onClick={() => setPublishOpen(true)}
+                className="rounded-[var(--ck-radius-sm)] bg-emerald-600 px-3 py-2 text-sm font-medium text-white shadow-[var(--ck-shadow-1)] transition-colors hover:bg-emerald-500 active:bg-emerald-700 disabled:opacity-50"
+              >
+                {publishing ? "Publishing…" : "Publish changes"}
+              </button>
+
+              <button
+                type="button"
+                disabled={saving}
+                onClick={() => setDeleteOpen(true)}
+                className="rounded-[var(--ck-radius-sm)] border border-white/10 bg-white/5 px-3 py-2 text-sm font-medium text-[color:var(--ck-text-primary)] shadow-[var(--ck-shadow-1)] transition-colors hover:bg-white/10 active:bg-white/15 disabled:opacity-50"
+              >
+                Delete Team
+              </button>
+            </div>
+          </div>
+
+          <div className="ck-glass-strong p-4">
+            <div className="text-sm font-medium text-[color:var(--ck-text-primary)]">Notes</div>
+
+            <div className="mt-3 rounded-[var(--ck-radius-sm)] border border-white/10 bg-black/20 p-3">
+              <div className="text-xs font-medium text-[color:var(--ck-text-secondary)]">Parent recipe (locked)</div>
+              <select
+                disabled
+                className="mt-2 w-full rounded-[var(--ck-radius-sm)] border border-white/10 bg-black/25 px-3 py-2 text-sm text-[color:var(--ck-text-primary)] disabled:opacity-70"
+                value={fromId}
+                onChange={(e) => setFromId(e.target.value)}
+              >
+                {teamRecipes.map((r) => (
+                  <option key={`${r.source}:${r.id}`} value={r.id}>
+                    {r.id} ({r.source})
+                  </option>
+                ))}
+              </select>
+              {lockedFromId ? (
+                <div className="mt-2 text-xs text-[color:var(--ck-text-tertiary)]">
+                  <code>{lockedFromId}</code>
+                  {lockedFromName ? ` (${lockedFromName})` : ""}
+                </div>
+              ) : provenanceMissing ? (
+                <div className="mt-2 text-xs text-[color:var(--ck-text-tertiary)]">
+                  Provenance not found for this team. The parent recipe above is a best-guess.
+                </div>
+              ) : null}
+
+
+            </div>
+
+            <ul className="mt-4 list-disc space-y-1 pl-5 text-sm text-[color:var(--ck-text-secondary)]">
+              <li>
+                <strong>Save</strong> writes/overwrites the custom recipe file identified by “Team id”.
+              </li>
+              <li>
+                <strong>Publish changes</strong> re-scaffolds this team from your current custom recipe and applies config (complete overwrite).
+              </li>
+              <li>
+                <strong>Delete Team</strong> runs the safe uninstall command (<code>openclaw recipes remove-team</code>).
+              </li>
+            </ul>
+          </div>
+        </div>
+      ) : null}
+
+      {activeTab === "agents" ? (
+        <div className="mt-6 ck-glass-strong p-4">
+          <div className="text-sm font-medium text-[color:var(--ck-text-primary)]">Agents in this team</div>
+          <p className="mt-2 text-sm text-[color:var(--ck-text-secondary)]">
+            Add/remove agents by updating the <code>agents:</code> list in your custom team recipe (<code>{toId}</code>).
+          </p>
+
+          <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-3">
+            <div>
+              <label className="block text-xs font-medium text-[color:var(--ck-text-secondary)]">Role</label>
+              <select
+                value={newRole}
+                onChange={(e) => {
+                  const v = e.target.value;
+                  setNewRole(v);
+                  if (v === "__custom__") {
+                    setCustomRole("");
+                    setNewRoleName("");
+                    return;
+                  }
+                  setCustomRole("");
+                  const match = recipeAgents.find((a) => a.role === v);
+                  setNewRoleName(match?.name || "");
+                }}
+                className="mt-1 w-full rounded-[var(--ck-radius-sm)] border border-white/10 bg-black/25 px-3 py-2 text-sm text-[color:var(--ck-text-primary)]"
+              >
+                <option value="">Select…</option>
+                {recipeAgents.map((a) => (
+                  <option key={a.role} value={a.role}>
+                    {a.name || a.role}
+                  </option>
+                ))}
+                <option value="__custom__">Other…</option>
+              </select>
+
+              {newRole === "__custom__" ? (
+                <input
+                  value={customRole}
+                  onChange={(e) => setCustomRole(e.target.value)}
+                  placeholder="role (e.g. researcher)"
+                  className="mt-2 w-full rounded-[var(--ck-radius-sm)] border border-white/10 bg-black/25 px-3 py-2 text-sm text-[color:var(--ck-text-primary)]"
+                />
+              ) : null}
+
+              <div className="mt-1 text-xs text-[color:var(--ck-text-tertiary)]">
+                This writes to the recipe’s <code>agents:</code> list.
+              </div>
+            </div>
+
+            <div className="sm:col-span-2">
+              <div>
+                <label className="block text-xs font-medium text-[color:var(--ck-text-secondary)]">Name (optional)</label>
+                <input
+                  value={newRoleName}
+                  onChange={(e) => setNewRoleName(e.target.value)}
+                  placeholder="Onchain Researcher"
+                  className="mt-1 w-full rounded-[var(--ck-radius-sm)] border border-white/10 bg-black/25 px-3 py-2 text-sm text-[color:var(--ck-text-primary)]"
+                />
+              </div>
+            </div>
+          </div>
+
+          <div className="mt-3 flex flex-wrap gap-2">
+            <button
+              disabled={saving || !derivedRole}
+              onClick={async () => {
+                setSaving(true);
+                try {
+                  try {
+                    await ensureCustomRecipeExists({ overwrite: false });
+                  } catch (e: unknown) {
+                    // If the custom recipe already exists, proceed; we only needed to ensure a workspace file exists.
+                    // Note: /api/recipes/clone returns 409 in this case.
+                    const msg = e instanceof Error ? e.message : String(e);
+                    if (!/Recipe id already exists:/i.test(msg)) throw e;
+                  }
+                  const res = await fetch("/api/recipes/team-agents", {
+                    method: "POST",
+                    headers: { "content-type": "application/json" },
+                    body: JSON.stringify(
+                      newRole === "__custom__"
+                        ? {
+                            recipeId: toId.trim(),
+                            op: "add",
+                            role: derivedRole,
+                            name: newRoleName,
+                          }
+                        : {
+                            recipeId: toId.trim(),
+                            op: "addLike",
+                            baseRole: derivedRole,
+                            teamId,
+                            name: newRoleName,
+                          },
+                    ),
+                  });
+                  const json = await res.json();
+                  if (!res.ok || !json.ok) throw new Error(json.error || "Failed updating agents list");
+                  setContent(String(json.content ?? content));
+
+                  // Immediately install/create the new agent by applying config and scaffolding missing files.
+                  // Do not overwrite existing recipe-managed files.
+                  try {
+                    const sync = await fetch("/api/scaffold", {
+                      method: "POST",
+                      headers: { "content-type": "application/json" },
+                      body: JSON.stringify({
+                        kind: "team",
+                        recipeId: toId.trim(),
+                        teamId,
+                        applyConfig: true,
+                        overwrite: false,
+                        allowExisting: true,
+                        cronInstallChoice: "no",
+                      }),
+                    });
+                    const syncJson = await sync.json();
+                    if (!sync.ok) throw new Error(syncJson.error || "Failed to apply config / scaffold team");
+                  } catch (e: unknown) {
+                    // Non-fatal: recipe change is still saved.
+                    flashMessage(e instanceof Error ? e.message : String(e), "error");
+                  }
+
+                  // Poll for new agent to appear; only restart gateway if needed.
+                  const expectedAgentId = typeof (json as { addedAgentId?: unknown }).addedAgentId === "string" ? (json as { addedAgentId?: string }).addedAgentId : "";
+
+                  async function refreshAgentsOnce() {
+                    const agentsRes = await fetch("/api/agents", { cache: "no-store" });
+                    const agentsJson = (await agentsRes.json()) as { agents?: unknown[] };
+                    if (!agentsRes.ok) return { ok: false as const, hasExpected: false as const, agents: [] as Array<{ id: string; identityName?: string }> };
+                    const all = Array.isArray(agentsJson.agents) ? agentsJson.agents : [];
+                    const filtered = all.filter((a) => String((a as { id?: unknown }).id ?? "").startsWith(`${teamId}-`));
+                    const mapped = filtered.map((a) => {
+                      const agent = a as { id?: unknown; identityName?: unknown };
+                      return {
+                        id: String(agent.id ?? ""),
+                        identityName: typeof agent.identityName === "string" ? agent.identityName : undefined,
+                      };
+                    });
+                    const hasExpected = expectedAgentId ? mapped.some((a) => a.id === expectedAgentId) : false;
+                    return { ok: true as const, hasExpected, agents: mapped };
+                  }
+
+                  async function pollAgents(maxMs: number) {
+                    const start = Date.now();
+                    while (Date.now() - start < maxMs) {
+                      try {
+                        const r = await refreshAgentsOnce();
+                        if (r.ok) {
+                          setTeamAgents(r.agents);
+                          if (!expectedAgentId || r.hasExpected) return true;
+                        }
+                      } catch {
+                        // ignore
+                      }
+                      await new Promise((res) => setTimeout(res, 500));
+                    }
+                    return false;
+                  }
+
+                  const appeared = await pollAgents(5000);
+                  if (!appeared && expectedAgentId) {
+                    // Background-ish restart: do it only if needed.
+                    try {
+                      void fetch("/api/gateway/restart", { method: "POST" });
+                    } catch {
+                      // ignore
+                    }
+                    await pollAgents(10000);
+                  }
+
+                  flashMessage(`Updated agents list in ${toId}`, "success");
+                } catch (e: unknown) {
+                  flashMessage(e instanceof Error ? e.message : String(e), "error");
+                } finally {
+                  setSaving(false);
+                }
+              }}
+              className="rounded-[var(--ck-radius-sm)] bg-[var(--ck-accent-red)] px-3 py-2 text-sm font-medium text-white shadow-[var(--ck-shadow-1)] disabled:opacity-50"
+            >
+              Add agent
+            </button>
+            {/* remove-agent UI intentionally omitted */}
+          </div>
+
+          <div className="mt-6">
+            <div className="text-xs font-medium text-[color:var(--ck-text-secondary)]">Detected installed team agents (read-only)</div>
+            <ul className="mt-2 space-y-2">
+              {teamAgents.length ? (
+                teamAgents.map((a) => (
+                  <li key={a.id} className="flex items-center justify-between gap-3">
+                    <div className="min-w-0">
+                      <div className="truncate text-sm font-medium text-[color:var(--ck-text-primary)]">
+                        {a.identityName || a.id}
+                      </div>
+                      <div className="text-xs text-[color:var(--ck-text-secondary)]">{a.id}</div>
+                    </div>
+                    <a
+                      className="text-sm font-medium text-[color:var(--ck-accent-red)] hover:text-[color:var(--ck-accent-red-hover)]"
+                      href={"/agents/" + encodeURIComponent(a.id) + "?returnTo=" + encodeURIComponent("/teams/" + teamId + "?tab=agents")}
+                    >
+                      Edit
+                    </a>
+                  </li>
+                ))
+              ) : teamAgentsLoading ? (
+                <li className="text-sm text-[color:var(--ck-text-secondary)]">Loading…</li>
+              ) : (
+                <li className="text-sm text-[color:var(--ck-text-secondary)]">No team agents detected.</li>
+              )}
+            </ul>
+          </div>
+        </div>
+      ) : null}
+
+      {activeTab === "skills" ? (
+        <div className="mt-6 ck-glass-strong p-4">
+          <div className="text-sm font-medium text-[color:var(--ck-text-primary)]">Skills</div>
+          <p className="mt-2 text-sm text-[color:var(--ck-text-secondary)]">
+            Skills installed in this <strong>team</strong> workspace (<code>skills/</code>). These are available to all agents in the team.
+            For agent-specific skills, open the agent from the Agents tab.
+          </p>
+
+          <div className="mt-4">
+            <div className="text-xs font-medium text-[color:var(--ck-text-secondary)]">Installed</div>
+            <ul className="mt-2 list-disc space-y-1 pl-5 text-sm text-[color:var(--ck-text-secondary)]">
+              {skillsList.length ? skillsList.map((s) => <li key={s}>{s}</li>) : <li>None installed.</li>}
+            </ul>
+          </div>
+
+          <div className="mt-5 rounded-[var(--ck-radius-sm)] border border-white/10 bg-black/15 p-3">
+            <div className="text-xs font-medium text-[color:var(--ck-text-secondary)]">Add a skill</div>
+            <div className="mt-2 flex flex-col gap-2 sm:flex-row sm:items-center">
+              <select
+                value={selectedSkill}
+                onChange={(e) => setSelectedSkill(e.target.value)}
+                className="w-full rounded-[var(--ck-radius-sm)] border border-white/10 bg-black/25 px-3 py-2 text-sm text-[color:var(--ck-text-primary)]"
+                disabled={installingSkill || skillsLoading || !availableSkills.length}
+              >
+                {availableSkills.length ? (
+                  availableSkills.map((s) => (
+                    <option key={s} value={s}>
+                      {s}
+                    </option>
+                  ))
+                ) : (
+                  <option value="">No skills found</option>
+                )}
+              </select>
+              <button
+                type="button"
+                disabled={installingSkill || skillsLoading || !selectedSkill}
+                onClick={async () => {
+                  setInstallingSkill(true);
+                  setTeamSkillMsg("");
+                  setTeamSkillError("");
+                  try {
+                    const res = await fetch("/api/teams/skills/install", {
+                      method: "POST",
+                      headers: { "content-type": "application/json" },
+                      body: JSON.stringify({ teamId, skill: selectedSkill }),
+                    });
+                    const json = await res.json();
+                    if (!res.ok || !json.ok) throw new Error(json.error || "Failed to install skill");
+                    setTeamSkillMsg(`Installed skill: ${selectedSkill}`);
+
+                    // Refresh installed list.
+                    const r = await fetch(`/api/teams/skills?teamId=${encodeURIComponent(teamId)}`, { cache: "no-store" });
+                    const j = await r.json();
+                    if (r.ok && j.ok) setSkillsList(Array.isArray(j.skills) ? (j.skills as string[]) : []);
+                  } catch (e: unknown) {
+                    setTeamSkillError(e instanceof Error ? e.message : String(e));
+                  } finally {
+                    setInstallingSkill(false);
+                  }
+                }}
+                className="rounded-[var(--ck-radius-sm)] bg-[var(--ck-accent-red)] px-3 py-2 text-sm font-medium text-white shadow-[var(--ck-shadow-1)] disabled:opacity-50"
+              >
+                {installingSkill ? "Adding…" : "Add"}
+              </button>
+            </div>
+            {teamSkillError ? (
+              <div className="mt-3 rounded-[var(--ck-radius-sm)] border border-red-400/30 bg-red-500/10 p-3 text-sm text-red-100">
+                {teamSkillError}
+              </div>
+            ) : null}
+
+            {teamSkillMsg ? (
+              <div className="mt-3 rounded-[var(--ck-radius-sm)] border border-emerald-400/30 bg-emerald-500/10 p-3 text-sm text-emerald-100">
+                {teamSkillMsg}
+              </div>
+            ) : null}
+
+            <div className="mt-2 text-xs text-[color:var(--ck-text-tertiary)]">
+              This uses <code>openclaw recipes install-skill &lt;skill&gt; --team-id {teamId} --yes</code>.
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {activeTab === "cron" ? (
+        <div className="mt-6 ck-glass-strong p-4">
+          <div className="text-sm font-medium text-[color:var(--ck-text-primary)]">Cron jobs (filtered by team name)</div>
+          <ul className="mt-3 space-y-3">
+            {cronJobs.length ? (
+              cronJobs.map((j) => {
+                const job = j as {
+                  id?: unknown;
+                  jobId?: unknown;
+                  name?: unknown;
+                  enabled?: unknown;
+                  state?: { enabled?: unknown };
+                };
+                const id = String(job.id ?? job.jobId ?? "").trim();
+                const key = id || String(job.name ?? "job");
+                const label = String(job.name ?? job.id ?? job.jobId ?? "(unnamed)");
+                const enabled = job.enabled ?? job.state?.enabled;
+
+                async function act(action: "enable" | "disable" | "run") {
+                  setSaving(true);
+                                    try {
+                    const res = await fetch("/api/cron/job", {
+                      method: "POST",
+                      headers: { "content-type": "application/json" },
+                      body: JSON.stringify({ id, action }),
+                    });
+                    const json = await res.json();
+                    if (!res.ok || !json.ok) throw new Error(json.error || "Cron action failed");
+                    flashMessage(`Cron ${action}: ${label}`, "success");
+                  } catch (e: unknown) {
+                    flashMessage(e instanceof Error ? e.message : String(e), "error");
+                  } finally {
+                    setSaving(false);
+                  }
+                }
+
+                return (
+                  <li key={key} className="rounded-[var(--ck-radius-sm)] border border-white/10 bg-black/20 p-3">
+                    <div className="font-medium text-[color:var(--ck-text-primary)]">{label}</div>
+                    <div className="mt-1 text-xs text-[color:var(--ck-text-secondary)]">Enabled: {String(enabled ?? "?")}</div>
+                    <div className="mt-2 flex flex-wrap gap-2">
+                      <button
+                        disabled={saving || !id}
+                        onClick={() => act("run")}
+                        className="rounded-[var(--ck-radius-sm)] border border-white/10 bg-white/5 px-2.5 py-1.5 text-xs font-medium text-[color:var(--ck-text-primary)] hover:bg-white/10 disabled:opacity-50"
+                      >
+                        Run
+                      </button>
+                      <button
+                        disabled={saving || !id}
+                        onClick={() => act("enable")}
+                        className="rounded-[var(--ck-radius-sm)] border border-white/10 bg-white/5 px-2.5 py-1.5 text-xs font-medium text-[color:var(--ck-text-primary)] hover:bg-white/10 disabled:opacity-50"
+                      >
+                        Enable
+                      </button>
+                      <button
+                        disabled={saving || !id}
+                        onClick={() => act("disable")}
+                        className="rounded-[var(--ck-radius-sm)] border border-white/10 bg-white/5 px-2.5 py-1.5 text-xs font-medium text-[color:var(--ck-text-primary)] hover:bg-white/10 disabled:opacity-50"
+                      >
+                        Disable
+                      </button>
+                      {!id ? (
+                        <div className="text-xs text-[color:var(--ck-text-tertiary)]">(missing id)</div>
+                      ) : null}
+                    </div>
+                  </li>
+                );
+              })
+            ) : cronLoading ? (
+              <li className="text-sm text-[color:var(--ck-text-secondary)]">Loading…</li>
+            ) : (
+              <li className="text-sm text-[color:var(--ck-text-secondary)]">No cron jobs detected for this team.</li>
+            )}
+          </ul>
+        </div>
+      ) : null}
+
+      {activeTab === "files" ? (
+        <div className="mt-6 grid grid-cols-1 gap-4 lg:grid-cols-3">
+          <div className="ck-glass-strong p-4">
+            <div className="flex items-center justify-between gap-3">
+              <div className="text-sm font-medium text-[color:var(--ck-text-primary)]">Team files</div>
+              <label className="flex items-center gap-2 text-xs text-[color:var(--ck-text-secondary)]">
+                <input
+                  type="checkbox"
+                  checked={showOptionalFiles}
+                  onChange={(e) => setShowOptionalFiles(e.target.checked)}
+                />
+                Show optional
+              </label>
+            </div>
+            <div className="mt-2 text-xs text-[color:var(--ck-text-tertiary)]">
+              Default view hides optional missing files to reduce noise.
+            </div>
+            <ul className="mt-3 space-y-1">
+              {teamFilesLoading ? (
+                <li className="text-sm text-[color:var(--ck-text-secondary)]">Loading…</li>
+              ) : null}
+              {teamFiles
+                .filter((f) => (showOptionalFiles ? true : f.required || !f.missing))
+                .map((f) => (
+                <li key={f.name}>
+                  <button
+                    onClick={() => onLoadTeamFile(f.name)}
+                    className={
+                      fileName === f.name
+                        ? "w-full rounded-[var(--ck-radius-sm)] bg-white/10 px-3 py-2 text-left text-sm text-[color:var(--ck-text-primary)]"
+                        : "w-full rounded-[var(--ck-radius-sm)] px-3 py-2 text-left text-sm text-[color:var(--ck-text-secondary)] hover:bg-white/5"
+                    }
+                  >
+                    <span className={f.required ? "text-[color:var(--ck-text-primary)]" : "text-[color:var(--ck-text-secondary)]"}>
+                      {f.name}
+                    </span>
+                    <span className="ml-2 text-[10px] uppercase tracking-wide text-[color:var(--ck-text-tertiary)]">
+                      {f.required ? "required" : "optional"}
+                    </span>
+                    {f.missing ? <span className="ml-2 text-xs text-[color:var(--ck-text-tertiary)]">missing</span> : null}
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </div>
+
+          <div className="ck-glass-strong p-4 lg:col-span-2">
+            <div className="flex items-center justify-between gap-3">
+              <div className="text-sm font-medium text-[color:var(--ck-text-primary)]">Edit: {fileName}</div>
+              <button
+                disabled={saving}
+                onClick={onSaveTeamFile}
+                className="rounded-[var(--ck-radius-sm)] bg-[var(--ck-accent-red)] px-3 py-2 text-sm font-medium text-white shadow-[var(--ck-shadow-1)] disabled:opacity-50"
+              >
+                {saving ? "Saving…" : "Save file"}
+              </button>
+            </div>
+
+            {teamFileError ? (
+              <div className="mt-3 rounded-[var(--ck-radius-sm)] border border-red-400/30 bg-red-500/10 p-3 text-sm text-red-100">
+                {teamFileError}
+              </div>
+            ) : null}
+
+            <textarea
+              value={fileContent}
+              onChange={(e) => setFileContent(e.target.value)}
+              className="mt-3 h-[55vh] w-full resize-none rounded-[var(--ck-radius-sm)] border border-white/10 bg-black/25 p-3 font-mono text-xs text-[color:var(--ck-text-primary)]"
+              spellCheck={false}
+            />
+          </div>
+        </div>
+      ) : null}
+
+      {/* markdown editor lives below for convenience */}
+      {activeTab === "recipe" ? (
+        <div className="mt-6 ck-glass-strong p-4">
+          <div className="text-sm font-medium text-[color:var(--ck-text-primary)]">Recipe markdown</div>
+
+          {recipeLoadError ? (
+            <div className="mt-3 rounded-[var(--ck-radius-sm)] border border-red-400/30 bg-red-500/10 p-3 text-sm text-red-100">
+              {recipeLoadError}
+            </div>
+          ) : null}
+
+          <textarea
+            value={content}
+            onChange={(e) => {
+              setContent(e.target.value);
+              setLoadedRecipeHash(null);
+            }}
+            className="mt-2 h-[55vh] w-full resize-none rounded-[var(--ck-radius-sm)] border border-white/10 bg-black/25 p-3 font-mono text-xs text-[color:var(--ck-text-primary)]"
+            spellCheck={false}
+          />
+        </div>
+      ) : null}
+
+      {/* Clone Team removed (per #0075). */}
+
+      <PublishChangesModal
+        open={publishOpen}
+        teamId={teamId}
+        recipeId={toId}
+        busy={publishing}
+        onClose={() => setPublishOpen(false)}
+        onConfirm={async () => {
+          setPublishing(true);
+          try {
+            const res = await fetch("/api/scaffold", {
+              method: "POST",
+              headers: { "content-type": "application/json" },
+              body: JSON.stringify({
+                kind: "team",
+                recipeId: toId.trim(),
+                teamId,
+                overwrite: true,
+                applyConfig: true,
+              }),
+            });
+            const json = await res.json();
+            if (!res.ok || !json.ok) throw new Error(json.error || "Publish failed");
+
+            // Refresh team meta so we can reflect published hash/state.
+            try {
+              const metaRes = await fetch(`/api/teams/meta?teamId=${encodeURIComponent(teamId)}`, {
+                cache: "no-store",
+              });
+              const metaJson = await metaRes.json();
+              if (metaRes.ok && metaJson.ok && metaJson.meta && typeof metaJson.meta.recipeHash === "string") {
+                setTeamMetaRecipeHash(metaJson.meta.recipeHash);
+              }
+            } catch {
+              // ignore
+            }
+
+            setPublishOpen(false);
+            flashMessage("Published changes to active team", "success");
+          } catch (e: unknown) {
+            flashMessage(e instanceof Error ? e.message : String(e), "error");
+          } finally {
+            setPublishing(false);
+          }
         }}
       />
 
       <DeleteTeamModal
         open={deleteOpen}
         teamId={teamId}
-        busy={saving}
+        busy={deleting}
         onClose={() => setDeleteOpen(false)}
         onConfirm={async () => {
-          setSaving(true);
+          setDeleting(true);
           try {
             const res = await fetch("/api/teams/remove-team", {
               method: "POST",
@@ -1025,13 +1181,14 @@ export default function TeamEditor({ teamId }: { teamId: string }) {
             setDeleteOpen(false);
             setTimeout(() => router.push("/"), 250);
           } catch (e: unknown) {
-            flashMessage(errorMessage(e), "error");
+            flashMessage(e instanceof Error ? e.message : String(e), "error");
           } finally {
-            setSaving(false);
+            setDeleting(false);
           }
         }}
       />
 
+      {/* duplicate markdown editor removed */}
     </div>
   );
 }

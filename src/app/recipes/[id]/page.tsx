@@ -1,22 +1,38 @@
 import Link from "next/link";
-import { redirect } from "next/navigation";
-import { findRecipeById } from "@/lib/recipes";
+import { unstable_noStore as noStore } from "next/cache";
+
+import { runOpenClaw } from "@/lib/openclaw";
 import RecipeEditor from "./RecipeEditor";
 
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
+
+type RecipeListItem = {
+  id: string;
+  name: string;
+  kind: "agent" | "team";
+  source: "builtin" | "workspace";
+};
+
 async function getKind(id: string): Promise<"agent" | "team" | null> {
-  const item = await findRecipeById(id);
-  return item?.kind ?? null;
+  const res = await runOpenClaw(["recipes", "list"]);
+  if (!res.ok) return null;
+  try {
+    const items = JSON.parse(res.stdout) as RecipeListItem[];
+    return items.find((r) => r.id === id)?.kind ?? null;
+  } catch {
+    return null;
+  }
 }
 
 export default async function RecipePage({ params }: { params: Promise<{ id: string }> }) {
-  const { id } = await params;
-  const kind = await getKind(id);
+  noStore();
 
-  // Team recipes should use the Team editor UI.
-  if (kind === "team") {
-    // Team recipes map directly to /teams/<teamId> (no extra "-team" suffix).
-    redirect(`/teams/${encodeURIComponent(id)}`);
-  }
+  const { id } = await params;
+  await getKind(id); // Resolved for future redirect logic; kept for cache consistency
+
+  // NOTE: We do NOT redirect team recipes to /teams/<id>.
+  // /recipes/<id> is the recipe editor/preview surface; /teams/<id> is the installed team editor.
 
   return (
     <main className="min-h-screen p-8">

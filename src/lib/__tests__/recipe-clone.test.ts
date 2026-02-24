@@ -26,6 +26,7 @@ describe("recipe-clone", () => {
         "--team-id",
         "my-team",
         "--overwrite",
+        "--overwrite-recipe",
       ]);
     });
 
@@ -37,6 +38,7 @@ describe("recipe-clone", () => {
         "--agent-id",
         "my-agent",
         "--overwrite",
+        "--overwrite-recipe",
       ]);
     });
 

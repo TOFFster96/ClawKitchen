@@ -1,10 +1,16 @@
 {
-  "name": "clawkitchen",
-  "version": "0.1.0",
-  "private": true,
+  "name": "@jiggai/kitchen",
+  "version": "0.1.8",
+  "private": false,
+  "openclaw": {
+    "extensions": [
+      "./openclaw/index.ts"
+    ]
+  },
   "scripts": {
     "dev": "next dev",
     "build": "next build",
+    "postbuild": "node scripts/copy-standalone-static.mjs",
     "start": "next start",
     "lint": "eslint",
     "test": "vitest",
@@ -14,8 +20,27 @@
     "dup:check": "jscpd src --min-tokens 50 --min-lines 10 --reporters html,console",
     "refactor:report": "node scripts/refactor-report.mjs",
     "smoke:goals": "node scripts/goals-smoke.mjs",
-    "prepare": "husky"
+    "prepare": "husky",
+    "prepack": "npm run build"
   },
+  "files": [
+    "openclaw/",
+    "openclaw.plugin.json",
+    "README.md",
+    "next.config.ts",
+    "public/",
+    "src/",
+    ".next/BUILD_ID",
+    ".next/server/",
+    ".next/static/",
+    ".next/required-server-files.json",
+    ".next/required-server-files.js",
+    ".next/routes-manifest.json",
+    ".next/prerender-manifest.json",
+    ".next/build-manifest.json",
+    ".next/app-path-routes-manifest.json",
+    ".next/package.json"
+  ],
   "dependencies": {
     "next": "16.1.6",
     "react": "19.2.3",

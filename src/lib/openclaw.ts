@@ -1,4 +1,4 @@
-import { execFileAsync } from "./exec";
+import { getKitchenApi } from "@/lib/kitchen-api";
 
 export type OpenClawExecResult = {
   ok: boolean;
@@ -25,12 +25,29 @@ function extractStderr(err: { stderr?: unknown; message?: unknown }, fallback: u
 }
 
 export async function runOpenClaw(args: string[]): Promise<OpenClawExecResult> {
+  const api = getKitchenApi();
   try {
-    const { stdout, stderr } = await execFileAsync("openclaw", args, {
-      maxBuffer: 10 * 1024 * 1024,
-      env: process.env,
-    });
-    return { ok: true, exitCode: 0, stdout: stdout?.toString() ?? "", stderr: stderr?.toString() ?? "" };
+    const res = (await api.runtime.system.runCommandWithTimeout(["openclaw", ...args], { timeoutMs: 120000 })) as {
+      stdout?: unknown;
+      stderr?: unknown;
+      exitCode?: unknown;
+      code?: unknown;
+      status?: unknown;
+    };
+
+    const stdout = String(res.stdout ?? "");
+    const stderr = String(res.stderr ?? "");
+    const exitCode =
+      typeof res.exitCode === "number"
+        ? res.exitCode
+        : typeof res.code === "number"
+          ? res.code
+          : typeof res.status === "number"
+            ? res.status
+            : 0;
+
+    if (exitCode !== 0) return { ok: false, exitCode, stdout, stderr };
+    return { ok: true, exitCode: 0, stdout, stderr };
   } catch (e: unknown) {
     const err = e as { code?: unknown; stdout?: unknown; stderr?: unknown; message?: unknown };
     const exitCode = typeof err.code === "number" ? err.code : 1;

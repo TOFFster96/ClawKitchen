@@ -167,6 +167,7 @@ describe("api recipes clone route", () => {
       "--agent-id",
       "my-agent",
       "--overwrite",
+      "--overwrite-recipe",
     ]);
   });
 
@@ -214,6 +215,7 @@ name: Source Team
       "--team-id",
       "my-team",
       "--overwrite",
+      "--overwrite-recipe",
     ]);
   });
 });

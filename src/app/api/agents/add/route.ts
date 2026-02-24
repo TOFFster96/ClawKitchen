@@ -3,7 +3,7 @@ import path from "node:path";
 
 import { NextResponse } from "next/server";
 
-import { execFileAsync } from "@/lib/exec";
+import { getKitchenApi } from "@/lib/kitchen-api";
 import { teamDirFromBaseWorkspace } from "@/lib/paths";
 
 function normalizeAgentId(id: string) {
@@ -99,7 +99,8 @@ export async function POST(req: Request) {
   await fs.rename(tmpPath, configPath);
 
   // Restart gateway so the new agent is live.
-  await execFileAsync("openclaw", ["gateway", "restart"], { timeout: 120000 });
+  const api = getKitchenApi();
+  await api.runtime.system.runCommandWithTimeout(["openclaw", "gateway", "restart"], { timeoutMs: 120000 });
 
   return NextResponse.json({ ok: true, agentId: newAgentId, workspace: newWorkspace, restarted: true });
   } catch (err) {

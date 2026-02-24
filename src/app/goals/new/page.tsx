@@ -4,7 +4,7 @@ import Link from "next/link";
 import { GoalFormFields } from "@/components/GoalFormFields";
 import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
-import { type GoalStatus, parseCommaList } from "@/lib/goals";
+import { type GoalStatus, parseCommaList } from "@/lib/goals-client";
 import { slugifyId } from "@/lib/slugify";
 
 export default function NewGoalPage() {

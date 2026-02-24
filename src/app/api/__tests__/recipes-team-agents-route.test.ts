@@ -52,7 +52,7 @@ describe("api recipes team-agents route", () => {
     );
     expect(res.status).toBe(400);
     const json = await res.json();
-    expect(json.error).toBe("op must be add|remove");
+    expect(json.error).toBe("op must be add|remove|addLike");
   });
 
   it("throws when role invalid", async () => {

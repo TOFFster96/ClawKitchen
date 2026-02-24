@@ -1,22 +1,30 @@
-import { describe, expect, it, vi, beforeEach } from "vitest";
+import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
 import { runOpenClaw } from "../openclaw";
 
-const mockExecFileAsync = vi.hoisted(() => vi.fn());
-
-vi.mock("../exec", () => ({
-  execFileAsync: (...args: unknown[]) => mockExecFileAsync(...args),
-}));
+const mockRunCommand = vi.hoisted(() => vi.fn());
 
 describe("openclaw", () => {
   beforeEach(() => {
-    mockExecFileAsync.mockReset();
+    mockRunCommand.mockReset();
+    (globalThis as unknown as { __clawkitchen_api?: unknown }).__clawkitchen_api = {
+      runtime: {
+        system: {
+          runCommandWithTimeout: mockRunCommand,
+        },
+      },
+    };
+  });
+
+  afterEach(() => {
+    delete (globalThis as unknown as { __clawkitchen_api?: unknown }).__clawkitchen_api;
   });
 
   describe("runOpenClaw", () => {
     it("returns ok true when exit is 0", async () => {
-      mockExecFileAsync.mockResolvedValue({
-        stdout: Buffer.from("stdout\n"),
-        stderr: Buffer.from("stderr"),
+      mockRunCommand.mockResolvedValue({
+        stdout: "stdout\n",
+        stderr: "stderr",
+        exitCode: 0,
       });
 
       const result = await runOpenClaw(["recipes", "list"]);
@@ -27,12 +35,12 @@ describe("openclaw", () => {
     });
 
     it("returns ok false with stdout/stderr on non-zero exit", async () => {
-      const err = new Error("Command failed") as Error & { code?: number; stdout?: Buffer; stderr?: Buffer };
+      const err = new Error("Command failed") as Error & { code?: number; stdout?: string; stderr?: string };
       err.code = 1;
-      err.stdout = Buffer.from("out");
-      err.stderr = Buffer.from("err");
+      err.stdout = "out";
+      err.stderr = "err";
 
-      mockExecFileAsync.mockRejectedValue(err);
+      mockRunCommand.mockRejectedValue(err);
 
       const result = await runOpenClaw(["bad", "cmd"]);
       expect(result.ok).toBe(false);
@@ -45,7 +53,7 @@ describe("openclaw", () => {
       const err = new Error("Something went wrong") as Error & { code?: number };
       err.code = 2;
 
-      mockExecFileAsync.mockRejectedValue(err);
+      mockRunCommand.mockRejectedValue(err);
 
       const result = await runOpenClaw(["fail"]);
       expect(result.ok).toBe(false);
@@ -57,7 +65,7 @@ describe("openclaw", () => {
       const err = new Error("fail") as Error & { code?: number };
       err.code = 42;
 
-      mockExecFileAsync.mockRejectedValue(err);
+      mockRunCommand.mockRejectedValue(err);
 
       const result = await runOpenClaw(["x"]);
       expect(result.exitCode).toBe(42);
@@ -66,7 +74,7 @@ describe("openclaw", () => {
     it("defaults exitCode to 1 when code not numeric", async () => {
       const err = new Error("fail");
 
-      mockExecFileAsync.mockRejectedValue(err);
+      mockRunCommand.mockRejectedValue(err);
 
       const result = await runOpenClaw(["x"]);
       expect(result.exitCode).toBe(1);

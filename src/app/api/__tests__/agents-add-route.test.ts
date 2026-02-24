@@ -2,10 +2,16 @@ import { describe, expect, it, vi, beforeEach } from "vitest";
 import { POST } from "../agents/add/route";
 import path from "node:path";
 
-const mockExecFileAsync = vi.hoisted(() => vi.fn());
+const mockRunCommand = vi.hoisted(() => vi.fn());
 
-vi.mock("@/lib/exec", () => ({
-  execFileAsync: (...args: unknown[]) => mockExecFileAsync(...args),
+vi.mock("@/lib/kitchen-api", () => ({
+  getKitchenApi: () => ({
+    runtime: {
+      system: {
+        runCommandWithTimeout: mockRunCommand,
+      },
+    },
+  }),
 }));
 vi.mock("node:fs/promises", () => ({
   default: {
@@ -29,7 +35,7 @@ const existingConfig = {
 
 describe("api agents add route", () => {
   beforeEach(() => {
-    mockExecFileAsync.mockReset();
+    mockRunCommand.mockReset();
     vi.mocked(fs.readFile).mockReset();
     vi.mocked(fs.mkdir).mockReset();
     vi.mocked(fs.writeFile).mockReset();
@@ -42,7 +48,7 @@ describe("api agents add route", () => {
     vi.mocked(fs.writeFile).mockResolvedValue(undefined);
     vi.mocked(fs.copyFile).mockResolvedValue(undefined);
     vi.mocked(fs.rename).mockResolvedValue(undefined);
-    mockExecFileAsync.mockResolvedValue({ stdout: "", stderr: "" });
+    mockRunCommand.mockResolvedValue({ stdout: "", stderr: "" });
   });
 
   it("returns 400 when agent id missing", async () => {
@@ -129,10 +135,9 @@ describe("api agents add route", () => {
     expect(json.workspace).toBe(
       path.resolve(baseWorkspace, "..", "workspace-my-agent")
     );
-    expect(mockExecFileAsync).toHaveBeenCalledWith(
-      "openclaw",
-      ["gateway", "restart"],
-      expect.objectContaining({ timeout: 120000 })
+    expect(mockRunCommand).toHaveBeenCalledWith(
+      ["openclaw", "gateway", "restart"],
+      expect.objectContaining({ timeoutMs: 120000 })
     );
   });
 });

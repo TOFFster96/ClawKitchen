@@ -72,7 +72,7 @@ describe("gateway", () => {
       await expect(toolsInvoke({ tool: "x" })).rejects.toThrow("Missing gateway token");
     });
 
-    it("uses env token over config", async () => {
+    it("uses config token when env and config both set", async () => {
       vi.stubEnv("OPENCLAW_GATEWAY_TOKEN", "env-token");
       vi.mocked(readOpenClawConfig).mockResolvedValue({
         gateway: { auth: { token: "config-token" } },
@@ -86,7 +86,7 @@ describe("gateway", () => {
       expect(mockFetch).toHaveBeenCalledWith(
         expect.any(String),
         expect.objectContaining({
-          headers: expect.objectContaining({ authorization: "Bearer env-token" }),
+          headers: expect.objectContaining({ authorization: "Bearer config-token" }),
         })
       );
     });

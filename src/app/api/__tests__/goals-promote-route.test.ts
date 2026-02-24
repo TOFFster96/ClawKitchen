@@ -2,11 +2,9 @@ import { describe, expect, it, vi, beforeEach } from "vitest";
 import { POST } from "../goals/[id]/promote/route";
 import path from "node:path";
 
-const mockExecFileAsync = vi.hoisted(() => vi.fn());
+vi.mock("@/lib/openclaw", () => ({ runOpenClaw: vi.fn() }));
 
-vi.mock("@/lib/exec", () => ({
-  execFileAsync: (...args: unknown[]) => mockExecFileAsync(...args),
-}));
+import { runOpenClaw } from "@/lib/openclaw";
 vi.mock("@/lib/goals", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/lib/goals")>();
   return { ...actual, readGoal: vi.fn(), writeGoal: vi.fn() };
@@ -33,7 +31,7 @@ describe("api goals promote route", () => {
   };
 
   beforeEach(() => {
-    mockExecFileAsync.mockReset();
+    vi.mocked(runOpenClaw).mockReset();
     vi.mocked(readGoal).mockReset();
     vi.mocked(writeGoal).mockReset();
     vi.mocked(getTeamWorkspaceDir).mockReset();
@@ -110,7 +108,7 @@ describe("api goals promote route", () => {
     expect(res.status).toBe(200);
     const json = await res.json();
     expect(json.pingAttempted).toBe(false);
-    expect(mockExecFileAsync).not.toHaveBeenCalled();
+    expect(runOpenClaw).not.toHaveBeenCalled();
   });
 
   it("pingAttempted true and pingOk true when agentToAgent enabled", async () => {
@@ -123,7 +121,7 @@ describe("api goals promote route", () => {
     vi.mocked(readOpenClawConfig).mockResolvedValue({
       tools: { agentToAgent: { enabled: true, allow: ["*"] } },
     });
-    mockExecFileAsync.mockResolvedValue({ stdout: "", stderr: "" });
+    vi.mocked(runOpenClaw).mockResolvedValue({ ok: true, exitCode: 0, stdout: "", stderr: "" });
 
     const res = await POST(
       new Request("https://test"),
@@ -133,10 +131,8 @@ describe("api goals promote route", () => {
     const json = await res.json();
     expect(json.pingAttempted).toBe(true);
     expect(json.pingOk).toBe(true);
-    expect(mockExecFileAsync).toHaveBeenCalledWith(
-      "openclaw",
-      expect.arrayContaining(["agent", "--agent", "development-team-lead"]),
-      expect.any(Object)
+    expect(runOpenClaw).toHaveBeenCalledWith(
+      expect.arrayContaining(["agent", "--agent", "development-team-lead"])
     );
   });
 
@@ -150,7 +146,7 @@ describe("api goals promote route", () => {
     vi.mocked(readOpenClawConfig).mockResolvedValue({
       tools: { agentToAgent: { enabled: true, allow: ["*"] } },
     });
-    mockExecFileAsync.mockRejectedValue(new Error("Command failed"));
+    vi.mocked(runOpenClaw).mockRejectedValue(new Error("Command failed"));
 
     const res = await POST(
       new Request("https://test"),

@@ -1,7 +1,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { NextResponse } from "next/server";
-import { cronJobId } from "@/lib/cron";
+import { cronJobId, type CronJobShape } from "@/lib/cron";
 import { getContentText, toolsInvoke } from "@/lib/gateway";
 import { teamDirFromBaseWorkspace } from "@/lib/paths";
 
@@ -59,7 +59,7 @@ export async function GET(req: Request) {
     tool: "cron",
     args: { action: "list", includeDisabled: true },
   })) as { jobs: unknown[] };
-  const jobs = (parsed.jobs ?? []).filter((j) => ids.has(cronJobId(j)));
+  const jobs = (parsed.jobs ?? []).filter((j) => ids.has(cronJobId(j as CronJobShape)));
 
   return NextResponse.json({ ok: true, teamId, teamDir, mappingPath, jobCount: jobs.length, jobs });
 }

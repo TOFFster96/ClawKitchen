@@ -1,6 +1,6 @@
 "use client";
 
-import type { GoalStatus } from "@/lib/goals";
+import type { GoalStatus } from "@/lib/goals-client";
 
 const inputClass =
   "mt-1 w-full rounded-[var(--ck-radius-sm)] border border-[color:var(--ck-border-subtle)] bg-transparent px-3 py-2 text-sm";

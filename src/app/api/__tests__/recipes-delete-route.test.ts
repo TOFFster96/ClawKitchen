@@ -8,7 +8,7 @@ vi.mock("@/lib/recipes", () => ({
   resolveRecipePath: vi.fn(),
 }));
 vi.mock("node:fs/promises", () => ({
-  default: { stat: vi.fn(), rm: vi.fn() },
+  default: { stat: vi.fn(), rm: vi.fn(), readdir: vi.fn(), readFile: vi.fn() },
 }));
 
 import { runOpenClaw } from "@/lib/openclaw";
@@ -43,6 +43,8 @@ describe("api recipes delete route", () => {
     vi.mocked(resolveRecipePath).mockReset();
     vi.mocked(fs.stat).mockReset();
     vi.mocked(fs.rm).mockReset();
+    vi.mocked(fs.readdir).mockReset();
+    vi.mocked(fs.readFile).mockReset();
   });
 
   it("returns 400 when id missing", async () => {
@@ -129,34 +131,32 @@ describe("api recipes delete route", () => {
   it("returns 409 when team has workspace", async () => {
     const wsRoot = "/mock-workspace";
     vi.mocked(findRecipeById).mockResolvedValue(teamWorkspaceItem);
-    vi.mocked(runOpenClaw)
-      .mockResolvedValueOnce({
-        ok: true,
-        exitCode: 0,
-        stdout: wsRoot,
-        stderr: "",
-      })
-      .mockResolvedValueOnce({
-        ok: true,
-        exitCode: 0,
-        stdout: JSON.stringify([]),
-        stderr: "",
-      });
+    vi.mocked(runOpenClaw).mockResolvedValueOnce({
+      ok: true,
+      exitCode: 0,
+      stdout: wsRoot,
+      stderr: "",
+    });
     vi.mocked(resolveRecipePath).mockResolvedValue(
       path.join(wsRoot, "recipes", "my-team.md")
     );
-    vi.mocked(fs.stat).mockResolvedValue({} as never);
+    vi.mocked(fs.readdir).mockResolvedValue([
+      { name: "workspace-my-team", isDirectory: () => true } as never,
+    ]);
+    vi.mocked(fs.readFile).mockResolvedValue(
+      JSON.stringify({ recipeId: "my-team", teamId: "my-team" })
+    );
 
     const res = await POST(
       new Request("https://test", { method: "POST", body: JSON.stringify({ id: "my-team" }) })
     );
     expect(res.status).toBe(409);
     const json = await res.json();
-    expect(json.error).toContain("Team appears installed");
-    expect(json.details.hasWorkspace).toBe(true);
+    expect(json.error).toContain("in use by installed team");
+    expect(json.details.attachedTeams).toContain("my-team");
   });
 
-  it("returns 409 when team has agents", async () => {
+  it("returns 200 when team has agents in config but no attached workspace", async () => {
     const wsRoot = "/mock-workspace";
     vi.mocked(findRecipeById).mockResolvedValue(teamWorkspaceItem);
     vi.mocked(runOpenClaw)
@@ -175,27 +175,36 @@ describe("api recipes delete route", () => {
     vi.mocked(resolveRecipePath).mockResolvedValue(
       path.join(wsRoot, "recipes", "my-team.md")
     );
-    vi.mocked(fs.stat).mockRejectedValue(new Error("ENOENT"));
+    vi.mocked(fs.readdir).mockResolvedValue([]);
+    vi.mocked(fs.rm).mockResolvedValue(undefined);
 
     const res = await POST(
       new Request("https://test", { method: "POST", body: JSON.stringify({ id: "my-team" }) })
     );
-    expect(res.status).toBe(409);
+    expect(res.status).toBe(200);
     const json = await res.json();
-    expect(json.details.hasAgents).toBe(true);
+    expect(json.ok).toBe(true);
   });
 
   it("deletes and returns ok for agent recipe", async () => {
     const wsRoot = "/mock-workspace";
     const filePath = path.join(wsRoot, "recipes", "my-agent.md");
     vi.mocked(findRecipeById).mockResolvedValue(workspaceItem);
-    vi.mocked(runOpenClaw).mockResolvedValueOnce({
-      ok: true,
-      exitCode: 0,
-      stdout: wsRoot,
-      stderr: "",
-    });
+    vi.mocked(runOpenClaw)
+      .mockResolvedValueOnce({
+        ok: true,
+        exitCode: 0,
+        stdout: wsRoot,
+        stderr: "",
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        exitCode: 0,
+        stdout: JSON.stringify([{ id: "other-agent" }]),
+        stderr: "",
+      });
     vi.mocked(resolveRecipePath).mockResolvedValue(filePath);
+    vi.mocked(fs.readFile).mockRejectedValue(new Error("ENOENT"));
     vi.mocked(fs.rm).mockResolvedValue(undefined);
 
     const res = await POST(

@@ -2,16 +2,6 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { NextResponse } from "next/server";
 import { resolveAgentWorkspace } from "@/lib/agents";
-import { listWorkspaceFiles } from "@/lib/api-route-helpers";
-
-const AGENT_FILE_CANDIDATES = [
-  { name: "IDENTITY.md", required: true, rationale: "Identity (name/emoji/avatar)" },
-  { name: "SOUL.md", required: true, rationale: "Agent persona/instructions" },
-  { name: "AGENTS.md", required: true, rationale: "Agent operating rules" },
-  { name: "TOOLS.md", required: true, rationale: "Agent local notes" },
-  { name: "USER.md", required: false, rationale: "Optional user profile" },
-  { name: "HEARTBEAT.md", required: false, rationale: "Optional periodic checklist" },
-];
 
 export async function GET(req: Request) {
   const { searchParams } = new URL(req.url);
@@ -20,9 +10,37 @@ export async function GET(req: Request) {
 
   const ws = await resolveAgentWorkspace(agentId);
 
-  const files = await listWorkspaceFiles(ws, AGENT_FILE_CANDIDATES);
+  const candidates: Array<{ name: string; required: boolean; rationale: string }> = [
+    { name: "SOUL.md", required: true, rationale: "Agent persona/instructions" },
+    { name: "AGENTS.md", required: true, rationale: "Agent operating rules" },
+    { name: "TOOLS.md", required: true, rationale: "Agent local notes" },
+    { name: "STATUS.md", required: false, rationale: "Optional current status snapshot" },
+    { name: "NOTES.md", required: false, rationale: "Optional scratchpad" },
+    { name: "IDENTITY.md", required: false, rationale: "Optional identity (name/emoji/avatar)" },
+    { name: "USER.md", required: false, rationale: "Optional user profile" },
+    { name: "HEARTBEAT.md", required: false, rationale: "Optional periodic checklist" },
+  ];
 
-  // Optional: MEMORY.md (handled separately for backward compatibility)
+  const files = await Promise.all(
+    candidates.map(async (c) => {
+      const p = path.join(ws, c.name);
+      try {
+        const st = await fs.stat(p);
+        return {
+          name: c.name,
+          required: c.required,
+          rationale: c.rationale,
+          path: p,
+          missing: false,
+          size: st.size,
+          updatedAtMs: st.mtimeMs,
+        };
+      } catch {
+        return { name: c.name, required: c.required, rationale: c.rationale, path: p, missing: true };
+      }
+    })
+  );
+
   try {
     const p = path.join(ws, "MEMORY.md");
     const st = await fs.stat(p);

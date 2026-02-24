@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { errorMessage } from "@/lib/errors";
-import { type GoalFrontmatter } from "@/lib/goals";
+import { type GoalFrontmatter } from "@/lib/goals-client";
 import { useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 

@@ -3,50 +3,11 @@ import path from "node:path";
 
 import { NextResponse } from "next/server";
 
-import { execFileAsync } from "@/lib/exec";
 import { slugifyFilePart, ensureWorkflowInstructions } from "@/lib/goal-promote";
 import { errorMessage } from "@/lib/errors";
 import { goalErrorStatus, readGoal, writeGoal } from "@/lib/goals";
 import { getTeamWorkspaceDir, readOpenClawConfig } from "@/lib/paths";
-
-async function tryLeadPing(
-  cfg: Awaited<ReturnType<typeof readOpenClawConfig>>,
-  inboxPath: string,
-  title: string,
-  goalId: string
-): Promise<{ attempted: boolean; ok: boolean; reason: string | null }> {
-  const targetAgentId = "development-team-lead";
-  const enabled = cfg.tools?.agentToAgent?.enabled === true;
-  const allow = cfg.tools?.agentToAgent?.allow ?? [];
-  const permitted = enabled && (allow.includes("*") || allow.includes(targetAgentId));
-
-  if (!permitted) {
-    const reason = enabled
-      ? `agentToAgent.allow does not include "*" or "${targetAgentId}"`
-      : "tools.agentToAgent.enabled is false";
-    return { attempted: false, ok: false, reason };
-  }
-
-  try {
-    await execFileAsync(
-      "openclaw",
-      [
-        "agent",
-        "--agent",
-        targetAgentId,
-        "--message",
-        `New goal promoted to development-team inbox: ${title} (${goalId}). Inbox file: ${inboxPath}`,
-        "--timeout",
-        "60",
-        "--json",
-      ],
-      { timeout: 70000 }
-    );
-    return { attempted: true, ok: true, reason: null };
-  } catch (e: unknown) {
-    return { attempted: true, ok: false, reason: errorMessage(e) };
-  }
-}
+import { runOpenClaw } from "@/lib/openclaw";
 
 export async function POST(_: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
@@ -111,15 +72,46 @@ export async function POST(_: Request, { params }: { params: Promise<{ id: strin
     });
 
     const cfg = await readOpenClawConfig();
-    const ping = await tryLeadPing(cfg, inboxPath, updated.frontmatter.title, goalId);
+    const enabled = cfg.tools?.agentToAgent?.enabled === true;
+    const allow = cfg.tools?.agentToAgent?.allow ?? [];
+    const targetAgentId = "development-team-lead";
+    const permitted = enabled && (allow.includes("*") || allow.includes(targetAgentId));
+
+    let pingAttempted = false;
+    let pingOk = false;
+    let pingReason: string | null = null;
+
+    if (!permitted) {
+      pingReason = enabled
+        ? `agentToAgent.allow does not include "*" or "${targetAgentId}"`
+        : "tools.agentToAgent.enabled is false";
+    } else {
+      pingAttempted = true;
+      try {
+        const res = await runOpenClaw([
+          "agent",
+          "--agent",
+          targetAgentId,
+          "--message",
+          `New goal promoted to development-team inbox: ${updated.frontmatter.title} (${goalId}). Inbox file: ${inboxPath}`,
+          "--timeout",
+          "60",
+          "--json",
+        ]);
+        if (!res.ok) throw new Error(res.stderr || `openclaw exit ${res.exitCode}`);
+        pingOk = true;
+      } catch (e: unknown) {
+        pingReason = e instanceof Error ? e.message : String(e);
+      }
+    }
 
     return NextResponse.json({
       ok: true,
       goal: updated.frontmatter,
       inboxPath,
-      pingAttempted: ping.attempted,
-      pingOk: ping.ok,
-      pingReason: ping.reason,
+      pingAttempted,
+      pingOk,
+      pingReason,
     });
   } catch (e: unknown) {
     const msg = errorMessage(e);

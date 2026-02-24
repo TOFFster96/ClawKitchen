@@ -1,8 +1,11 @@
+import { unstable_noStore as noStore } from "next/cache";
 import { type AgentListItem } from "@/lib/agents";
 import { runOpenClaw } from "@/lib/openclaw";
 import { listRecipes } from "@/lib/recipes";
 import HomeClient from "./HomeClient";
 
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
 async function getAgents(): Promise<AgentListItem[]> {
   const res = await runOpenClaw(["agents", "list", "--json"]);
   if (!res.ok) return [];
@@ -22,6 +25,9 @@ async function getTeamsFromRecipes(): Promise<{ teamNames: Record<string, string
 }
 
 export default async function Home() {
+  // Home should always reflect the current OpenClaw state (teams/agents can change outside Next).
+  noStore();
+
   const [agents, { teamNames }] = await Promise.all([getAgents(), getTeamsFromRecipes()]);
   return <HomeClient agents={agents} teamNames={teamNames} />;
 }

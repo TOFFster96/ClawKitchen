@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { GoalFormFields } from "@/components/GoalFormFields";
 import { errorMessage } from "@/lib/errors";
-import { type GoalFrontmatter, type GoalStatus, parseCommaList } from "@/lib/goals";
+import { type GoalFrontmatter, type GoalStatus, parseCommaList } from "@/lib/goals-client";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
 

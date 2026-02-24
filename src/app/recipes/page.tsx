@@ -1,9 +1,20 @@
 import Link from "next/link";
+import { unstable_noStore as noStore } from "next/cache";
+
 import { runOpenClaw } from "@/lib/openclaw";
-import type { RecipeListItem } from "@/lib/recipes";
 import RecipesClient from "./recipes-client";
 
-async function getRecipes(): Promise<{ recipes: RecipeListItem[]; error: string | null }> {
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
+
+type Recipe = {
+  id: string;
+  name: string;
+  kind: "agent" | "team";
+  source: "builtin" | "workspace";
+};
+
+async function getRecipes(): Promise<{ recipes: Recipe[]; error: string | null }> {
   const res = await runOpenClaw(["recipes", "list"]);
   if (!res.ok) {
     const err = res.stderr.trim() || `openclaw recipes list failed (exit=${res.exitCode})`;
@@ -11,7 +22,7 @@ async function getRecipes(): Promise<{ recipes: RecipeListItem[]; error: string 
   }
 
   try {
-    return { recipes: JSON.parse(res.stdout) as RecipeListItem[], error: null };
+    return { recipes: JSON.parse(res.stdout) as Recipe[], error: null };
   } catch {
     return { recipes: [], error: "Failed to parse openclaw recipes list output" };
   }
@@ -33,6 +44,8 @@ async function getAgents(): Promise<{ agentIds: string[]; error: string | null }
 }
 
 export default async function RecipesPage() {
+  noStore();
+
   const [{ recipes, error }, { agentIds }] = await Promise.all([getRecipes(), getAgents()]);
 
   const builtin = recipes.filter((r) => r.source === "builtin");

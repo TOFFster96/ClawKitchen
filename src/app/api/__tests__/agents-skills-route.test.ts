@@ -45,7 +45,8 @@ describe("api agents skills route", () => {
     const json = await res.json();
     expect(json.ok).toBe(true);
     expect(json.skills).toEqual(["a-skill", "b-skill"]);
-    expect(json.skillsDir).toContain("skills");
+    expect(json.skillsDirs).toBeDefined();
+    expect(json.skillsDirs[0]).toContain("skills");
   });
 
   it("returns empty skills with note when readdir fails", async () => {
@@ -58,6 +59,6 @@ describe("api agents skills route", () => {
     const json = await res.json();
     expect(json.ok).toBe(true);
     expect(json.skills).toEqual([]);
-    expect(json.note).toBe("ENOENT");
+    expect(json.note).toContain("ENOENT");
   });
 });

@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
-import { execFileAsync } from "@/lib/exec";
+
+import { runOpenClaw } from "@/lib/openclaw";
 
 export async function POST(req: Request) {
   try {
@@ -26,7 +27,8 @@ export async function POST(req: Request) {
       "--yes",
     ];
 
-    await execFileAsync("openclaw", args, { timeout: 30_000 });
+    const res = await runOpenClaw(args);
+    if (!res.ok) throw new Error(res.stderr || `openclaw exit ${res.exitCode}`);
 
     return NextResponse.json({ ok: true });
   } catch (err: unknown) {

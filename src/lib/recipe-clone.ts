@@ -7,10 +7,10 @@ export function suggestIds(baseId: string): string[] {
 
 export function scaffoldCmdForKind(kind: string, toId: string): string[] | null {
   if (kind === "team") {
-    return ["recipes", "scaffold-team", toId, "--team-id", toId, "--overwrite"];
+    return ["recipes", "scaffold-team", toId, "--team-id", toId, "--overwrite", "--overwrite-recipe"];
   }
   if (kind === "agent") {
-    return ["recipes", "scaffold", toId, "--agent-id", toId, "--overwrite"];
+    return ["recipes", "scaffold", toId, "--agent-id", toId, "--overwrite", "--overwrite-recipe"];
   }
   return null;
 }

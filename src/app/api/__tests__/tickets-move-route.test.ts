@@ -1,15 +1,13 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
 import { POST } from "../tickets/move/route";
 
-const mockExecFileAsync = vi.hoisted(() => vi.fn());
+vi.mock("@/lib/openclaw", () => ({ runOpenClaw: vi.fn() }));
 
-vi.mock("@/lib/exec", () => ({
-  execFileAsync: (...args: unknown[]) => mockExecFileAsync(...args),
-}));
+import { runOpenClaw } from "@/lib/openclaw";
 
 describe("api tickets move route", () => {
   beforeEach(() => {
-    mockExecFileAsync.mockReset();
+    vi.mocked(runOpenClaw).mockReset();
   });
 
   it("returns 400 when ticket missing", async () => {
@@ -32,7 +30,7 @@ describe("api tickets move route", () => {
   });
 
   it("returns 200 when move succeeds", async () => {
-    mockExecFileAsync.mockResolvedValue({ stdout: "", stderr: "" });
+    vi.mocked(runOpenClaw).mockResolvedValue({ ok: true, exitCode: 0, stdout: "", stderr: "" });
     const res = await POST(
       new Request("https://test", {
         method: "POST",
@@ -42,15 +40,13 @@ describe("api tickets move route", () => {
     expect(res.status).toBe(200);
     const json = await res.json();
     expect(json.ok).toBe(true);
-    expect(mockExecFileAsync).toHaveBeenCalledWith(
-      "openclaw",
-      expect.arrayContaining(["recipes", "move-ticket", "--ticket", "T-1", "--to", "in-progress"]),
-      expect.any(Object)
+    expect(runOpenClaw).toHaveBeenCalledWith(
+      expect.arrayContaining(["recipes", "move-ticket", "--ticket", "T-1", "--to", "in-progress"])
     );
   });
 
   it("returns 500 when exec fails", async () => {
-    mockExecFileAsync.mockRejectedValue(new Error("Command failed"));
+    vi.mocked(runOpenClaw).mockRejectedValue(new Error("Command failed"));
     const res = await POST(
       new Request("https://test", {
         method: "POST",
