@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { parse as parseYaml } from "yaml";
+import { fetchScaffold } from "@/lib/scaffold-client";
 
 type Recipe = {
   id: string;
@@ -60,13 +61,15 @@ type AgentRecipeFrontmatter = {
 
 function parseFrontmatter(raw: string): { fm: TeamRecipeFrontmatter | null; error?: string } {
   // Very small, tolerant frontmatter extractor.
-  // Expects:
-  // ---\n<yaml>\n---\n
-  const m = raw.match(/^---\s*\n([\s\S]*?)\n---\s*\n/);
-  if (!m) return { fm: null };
+  // Expects: ---\n<yaml>\n---\n
+  const start = raw.indexOf("---\n");
+  if (start !== 0) return { fm: null };
+  const end = raw.indexOf("\n---\n", 4);
+  if (end === -1) return { fm: null };
+  const yamlText = raw.slice(4, end);
 
   try {
-    const fm = parseYaml(m[1]) as TeamRecipeFrontmatter;
+    const fm = parseYaml(yamlText) as TeamRecipeFrontmatter;
     if (!fm || typeof fm !== "object") return { fm: null };
     return { fm };
   } catch (e) {
@@ -117,8 +120,281 @@ function expectedFilesForRole(fm: TeamRecipeFrontmatter | null, role: string | u
   if (!fm || !role || !fm.templates) return [];
   const keys = Object.keys(fm.templates).filter((k) => k.startsWith(`${role}.`));
   const files = keys.map(templateKeyToFileName);
-  // De-dupe while preserving order
   return [...new Set(files)];
+}
+
+function validateCreateTeamId(recipe: { id: string } | null, teamId: string): string | null {
+  if (!recipe) return null;
+  const t = teamId.trim();
+  if (!t) return "Team id is required.";
+  if (t === recipe.id) return `Team id cannot be the same as the recipe id (${recipe.id}). Choose a new team id.`;
+  return null;
+}
+
+function validateCreateAgentId(recipe: { id: string } | null, agentId: string): string | null {
+  if (!recipe) return null;
+  const a = agentId.trim();
+  if (!a) return "Agent id is required.";
+  if (a === recipe.id) return `Agent id cannot be the same as the recipe id (${recipe.id}). Choose a new agent id.`;
+  return null;
+}
+
+function TeamRecipePanelContent({
+  recipe,
+  fm,
+  fmErr,
+  onOpenCreateTeam,
+}: {
+  recipe: { id: string };
+  fm: TeamRecipeFrontmatter | null;
+  fmErr?: string;
+  onOpenCreateTeam: () => void;
+}) {
+  return (
+    <div className="ck-glass-strong p-4">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <div className="text-sm font-medium text-[color:var(--ck-text-primary)]">Team recipe</div>
+          <div className="mt-1 text-xs text-[color:var(--ck-text-tertiary)]">
+            Create a team from this recipe. Creating a Team runs <code>openclaw recipes scaffold-team</code> with{" "}
+            <code>--apply-config</code>.
+          </div>
+        </div>
+        <button
+          type="button"
+          onClick={onOpenCreateTeam}
+          className="shrink-0 rounded-[var(--ck-radius-sm)] bg-[var(--ck-accent-red)] px-3 py-2 text-sm font-medium text-white shadow-[var(--ck-shadow-1)] transition-colors hover:bg-[var(--ck-accent-red-hover)] active:bg-[var(--ck-accent-red-active)]"
+        >
+          Create Team
+        </button>
+      </div>
+      {fmErr ? (
+        <div className="mt-4 rounded-[var(--ck-radius-sm)] border border-white/10 bg-black/20 p-3 text-xs text-[color:var(--ck-text-primary)]">
+          Frontmatter parse error: {fmErr}
+        </div>
+      ) : null}
+      <TeamRecipeDetails fm={fm} recipe={recipe} />
+    </div>
+  );
+}
+
+function TeamRecipeDetails({ fm, recipe }: { fm: TeamRecipeFrontmatter | null; recipe: { id: string } }) {
+  return (
+    <div className="mt-4 space-y-3">
+      <details className="rounded-[var(--ck-radius-sm)] border border-white/10 bg-black/15 p-3" open>
+        <summary className="cursor-pointer text-sm font-medium text-[color:var(--ck-text-primary)]">Recipe information</summary>
+        <div className="mt-2 space-y-1 text-xs text-[color:var(--ck-text-secondary)]">
+          <div><span className="text-[color:var(--ck-text-tertiary)]">Recipe id:</span> {fm?.id ?? recipe.id}</div>
+          <div><span className="text-[color:var(--ck-text-tertiary)]">Version:</span> {fm?.version ?? "(unknown)"}</div>
+          <div><span className="text-[color:var(--ck-text-tertiary)]">Team id:</span> {fm?.team?.teamId ?? "(not set)"}</div>
+          {fm?.description ? <div className="whitespace-pre-wrap">{fm.description}</div> : null}
+        </div>
+      </details>
+      <TeamAgentsDetails fm={fm} />
+      <TeamCronDetails fm={fm} />
+    </div>
+  );
+}
+
+function TeamAgentsDetails({ fm }: { fm: TeamRecipeFrontmatter | null }) {
+  return (
+    <details className="rounded-[var(--ck-radius-sm)] border border-white/10 bg-black/15 p-3">
+      <summary className="cursor-pointer text-sm font-medium text-[color:var(--ck-text-primary)]">
+        Agents ({fm?.agents?.length ?? 0})
+      </summary>
+      <div className="mt-2 space-y-2">
+        {(fm?.agents ?? []).map((a, idx) => (
+          <details key={`${a.role ?? "agent"}:${idx}`} className="rounded-[var(--ck-radius-sm)] border border-white/10 bg-black/20 p-3">
+            <summary className="cursor-pointer text-sm text-[color:var(--ck-text-primary)]">
+              <span className="font-medium">{a.name ?? a.role ?? "(unnamed)"}</span>
+              {a.role ? <span className="text-[color:var(--ck-text-tertiary)]"> — {a.role}</span> : null}
+            </summary>
+            <div className="mt-2 space-y-1 text-xs text-[color:var(--ck-text-secondary)]">
+              <div><span className="text-[color:var(--ck-text-tertiary)]">Role:</span> {a.role ?? "(none)"}</div>
+              <div><span className="text-[color:var(--ck-text-tertiary)]">Tools profile:</span> {a.tools?.profile ?? "(default)"}</div>
+              <div><span className="text-[color:var(--ck-text-tertiary)]">Allow:</span> {(a.tools?.allow ?? []).length ? (a.tools?.allow ?? []).join(", ") : "(none)"}</div>
+              <div><span className="text-[color:var(--ck-text-tertiary)]">Deny:</span> {(a.tools?.deny ?? []).length ? (a.tools?.deny ?? []).join(", ") : "(none)"}</div>
+              <div className="pt-1">
+                <span className="text-[color:var(--ck-text-tertiary)]">Expected files:</span>{" "}
+                {expectedFilesForRole(fm, a.role).length ? expectedFilesForRole(fm, a.role).join(", ") : "(not listed)"}
+              </div>
+            </div>
+          </details>
+        ))}
+        {(!fm?.agents || fm.agents.length === 0) ? (
+          <div className="text-xs text-[color:var(--ck-text-tertiary)]">(No agents listed in frontmatter)</div>
+        ) : null}
+      </div>
+    </details>
+  );
+}
+
+function TeamCronDetails({ fm }: { fm: TeamRecipeFrontmatter | null }) {
+  return (
+    <details className="rounded-[var(--ck-radius-sm)] border border-white/10 bg-black/15 p-3">
+      <summary className="cursor-pointer text-sm font-medium text-[color:var(--ck-text-primary)]">
+        Cron jobs ({fm?.cronJobs?.length ?? 0})
+      </summary>
+      <div className="mt-2 space-y-2">
+        {(fm?.cronJobs ?? []).map((c, idx) => (
+          <details key={`${c.id ?? "cron"}:${idx}`} className="rounded-[var(--ck-radius-sm)] border border-white/10 bg-black/20 p-3">
+            <summary className="cursor-pointer text-sm text-[color:var(--ck-text-primary)]">
+              <span className="font-medium">{c.name ?? c.id ?? "(unnamed)"}</span>
+              {c.schedule ? <span className="text-[color:var(--ck-text-tertiary)]"> — {c.schedule}</span> : null}
+            </summary>
+            <div className="mt-2 space-y-1 text-xs text-[color:var(--ck-text-secondary)]">
+              {c.agentId ? <div><span className="text-[color:var(--ck-text-tertiary)]">Agent:</span> {c.agentId}</div> : null}
+              {c.channel ? <div><span className="text-[color:var(--ck-text-tertiary)]">Channel:</span> {c.channel}</div> : null}
+              {typeof c.enabledByDefault === "boolean" ? (
+                <div><span className="text-[color:var(--ck-text-tertiary)]">Enabled by default:</span> {c.enabledByDefault ? "yes" : "no"}</div>
+              ) : null}
+              {c.message ? (
+                <div className="mt-2 whitespace-pre-wrap rounded-[var(--ck-radius-sm)] border border-white/10 bg-black/25 p-2 text-[11px] text-[color:var(--ck-text-primary)]">{c.message}</div>
+              ) : null}
+            </div>
+          </details>
+        ))}
+        {(!fm?.cronJobs || fm.cronJobs.length === 0) ? (
+          <div className="text-xs text-[color:var(--ck-text-tertiary)]">(No cron jobs listed in frontmatter)</div>
+        ) : null}
+      </div>
+    </details>
+  );
+}
+
+function RecipeEditorCreateModal({
+  open,
+  title,
+  recipeId,
+  children,
+  error,
+  busy,
+  onClose,
+  onConfirm,
+  confirmLabel,
+}: {
+  open: boolean;
+  title: string;
+  recipeId: string;
+  children: ReactNode;
+  error?: string;
+  busy: boolean;
+  onClose: () => void;
+  onConfirm: () => void;
+  confirmLabel: string;
+}) {
+  if (!open) return null;
+  return (
+    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 p-4" role="dialog" aria-modal="true">
+      <div className="ck-glass w-full max-w-lg p-5">
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <div className="truncate text-lg font-semibold tracking-tight">{title}</div>
+            <div className="mt-1 text-xs text-[color:var(--ck-text-secondary)]">From recipe: {recipeId}</div>
+          </div>
+          <button
+            type="button"
+            onClick={() => (!busy ? onClose() : undefined)}
+            className="rounded-[var(--ck-radius-sm)] px-2 py-1 text-sm text-[color:var(--ck-text-secondary)] hover:text-[color:var(--ck-text-primary)]"
+          >
+            Close
+          </button>
+        </div>
+        <div className="mt-4 space-y-3">
+          {children}
+          {error ? (
+            <div className="rounded-[var(--ck-radius-sm)] border border-white/10 bg-black/20 p-3 text-sm">{error}</div>
+          ) : null}
+          <div className="flex justify-end gap-2 pt-2">
+            <button
+              type="button"
+              disabled={busy}
+              onClick={onClose}
+              className="rounded-[var(--ck-radius-sm)] border border-white/10 bg-white/5 px-3 py-2 text-sm font-medium text-[color:var(--ck-text-primary)] transition-colors hover:bg-white/10 disabled:opacity-50"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              disabled={busy}
+              onClick={onConfirm}
+              className="rounded-[var(--ck-radius-sm)] bg-[var(--ck-accent-red)] px-3 py-2 text-sm font-medium text-white shadow-[var(--ck-shadow-1)] transition-colors hover:bg-[var(--ck-accent-red-hover)] active:bg-[var(--ck-accent-red-active)] disabled:opacity-50"
+            >
+              {busy ? "Creating…" : confirmLabel}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function AgentRecipePanelContent({
+  recipe,
+  afm,
+  afmErr,
+  onOpenCreateAgent,
+}: {
+  recipe: { id: string };
+  afm: AgentRecipeFrontmatter | null;
+  afmErr?: string;
+  onOpenCreateAgent: () => void;
+}) {
+  return (
+    <div className="ck-glass-strong p-4">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <div className="text-sm font-medium text-[color:var(--ck-text-primary)]">Agent recipe</div>
+          <div className="mt-1 text-xs text-[color:var(--ck-text-tertiary)]">
+            Create an agent from this recipe. Creating an Agent runs <code>openclaw recipes scaffold</code> with{" "}
+            <code>--apply-config</code>.
+          </div>
+        </div>
+        <button
+          type="button"
+          onClick={onOpenCreateAgent}
+          className="shrink-0 rounded-[var(--ck-radius-sm)] bg-[var(--ck-accent-red)] px-3 py-2 text-sm font-medium text-white shadow-[var(--ck-shadow-1)] transition-colors hover:bg-[var(--ck-accent-red-hover)] active:bg-[var(--ck-accent-red-active)]"
+        >
+          Create Agent
+        </button>
+      </div>
+      {afmErr ? (
+        <div className="mt-4 rounded-[var(--ck-radius-sm)] border border-white/10 bg-black/20 p-3 text-xs text-[color:var(--ck-text-primary)]">
+          Frontmatter parse error: {afmErr}
+        </div>
+      ) : null}
+      <div className="mt-4 space-y-3">
+        <details className="rounded-[var(--ck-radius-sm)] border border-white/10 bg-black/15 p-3" open>
+          <summary className="cursor-pointer text-sm font-medium text-[color:var(--ck-text-primary)]">Recipe information</summary>
+          <div className="mt-2 space-y-1 text-xs text-[color:var(--ck-text-secondary)]">
+            <div><span className="text-[color:var(--ck-text-tertiary)]">Recipe id:</span> {afm?.id ?? recipe.id}</div>
+            <div><span className="text-[color:var(--ck-text-tertiary)]">Version:</span> {afm?.version ?? "(unknown)"}</div>
+            {afm?.description ? <div className="whitespace-pre-wrap">{afm.description}</div> : null}
+          </div>
+        </details>
+        <details className="rounded-[var(--ck-radius-sm)] border border-white/10 bg-black/15 p-3">
+          <summary className="cursor-pointer text-sm font-medium text-[color:var(--ck-text-primary)]">
+            Files ({Object.keys(afm?.templates ?? {}).length})
+          </summary>
+          <div className="mt-2 space-y-1 text-xs text-[color:var(--ck-text-secondary)]">
+            {Object.keys(afm?.templates ?? {}).length ? (
+              <ul className="list-disc space-y-1 pl-5">
+                {Object.keys(afm?.templates ?? {}).map((k) => (
+                  <li key={k}>
+                    <span className="font-mono text-[11px]">{k}</span>
+                    <span className="text-[color:var(--ck-text-tertiary)]"> → </span>
+                    <span className="font-mono text-[11px]">{agentTemplateKeyToFileName(k)}</span>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <div className="text-[color:var(--ck-text-tertiary)]">(No templates listed in frontmatter)</div>
+            )}
+          </div>
+        </details>
+      </div>
+    </div>
+  );
 }
 
 export default function RecipeEditor({ recipeId }: { recipeId: string }) {
@@ -218,35 +494,24 @@ export default function RecipeEditor({ recipeId }: { recipeId: string }) {
 
   async function onSubmitCreateTeam() {
     if (!recipe || recipe.kind !== "team") return;
+    const err = validateCreateTeamId(recipe, teamId);
+    if (err) {
+      setCreateMsg(err);
+      return;
+    }
 
     const t = teamId.trim();
-    if (!t) {
-      setCreateMsg("Team id is required.");
-      return;
-    }
-    if (t === recipe.id) {
-      setCreateMsg(`Team id cannot be the same as the recipe id (${recipe.id}). Choose a new team id.`);
-      return;
-    }
-
     setCreating(true);
     setCreateMsg("");
 
     try {
-      const res = await fetch("/api/scaffold", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          kind: "team",
-          recipeId: recipe.id,
-          teamId: t,
-          applyConfig: true,
-          overwrite: false,
-          cronInstallChoice,
-        }),
+      const { res, json } = await fetchScaffold({
+        kind: "team",
+        recipeId: recipe.id,
+        teamId: t,
+        cronInstallChoice,
       });
-      const json = await res.json();
-      if (!res.ok) throw new Error(json.error || "Create Team failed");
+      if (!res.ok) throw new Error((json as { error?: string }).error || "Create Team failed");
 
       setCreateOpen(false);
       router.push(`/teams/${encodeURIComponent(t)}`);
@@ -260,35 +525,24 @@ export default function RecipeEditor({ recipeId }: { recipeId: string }) {
 
   async function onSubmitCreateAgent() {
     if (!recipe || recipe.kind !== "agent") return;
+    const err = validateCreateAgentId(recipe, agentId);
+    if (err) {
+      setCreateAgentMsg(err);
+      return;
+    }
 
     const a = agentId.trim();
-    if (!a) {
-      setCreateAgentMsg("Agent id is required.");
-      return;
-    }
-    if (a === recipe.id) {
-      setCreateAgentMsg(`Agent id cannot be the same as the recipe id (${recipe.id}). Choose a new agent id.`);
-      return;
-    }
-
     setCreatingAgent(true);
     setCreateAgentMsg("");
 
     try {
-      const res = await fetch("/api/scaffold", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          kind: "agent",
-          recipeId: recipe.id,
-          agentId: a,
-          name: agentName.trim() || undefined,
-          applyConfig: true,
-          overwrite: false,
-        }),
+      const { res, json } = await fetchScaffold({
+        kind: "agent",
+        recipeId: recipe.id,
+        agentId: a,
+        name: agentName.trim() || undefined,
       });
-      const json = await res.json();
-      if (!res.ok) throw new Error(json.error || "Create Agent failed");
+      if (!res.ok) throw new Error((json as { error?: string }).error || "Create Agent failed");
 
       setCreateAgentOpen(false);
       router.push(`/agents/${encodeURIComponent(a)}`);
@@ -351,342 +605,80 @@ export default function RecipeEditor({ recipeId }: { recipeId: string }) {
         </div>
 
         {recipe.kind === "team" ? (
-          <div className="ck-glass-strong p-4">
-            <div className="flex items-start justify-between gap-3">
-              <div>
-                <div className="text-sm font-medium text-[color:var(--ck-text-primary)]">Team recipe</div>
-                <div className="mt-1 text-xs text-[color:var(--ck-text-tertiary)]">
-                  Create a team from this recipe. Creating a Team runs <code>openclaw recipes scaffold-team</code> with <code>--apply-config</code>.
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={openCreateTeam}
-                className="shrink-0 rounded-[var(--ck-radius-sm)] bg-[var(--ck-accent-red)] px-3 py-2 text-sm font-medium text-white shadow-[var(--ck-shadow-1)] transition-colors hover:bg-[var(--ck-accent-red-hover)] active:bg-[var(--ck-accent-red-active)]"
-              >
-                Create Team
-              </button>
-            </div>
-
-            {fmErr ? (
-              <div className="mt-4 rounded-[var(--ck-radius-sm)] border border-white/10 bg-black/20 p-3 text-xs text-[color:var(--ck-text-primary)]">
-                Frontmatter parse error: {fmErr}
-              </div>
-            ) : null}
-
-            <div className="mt-4 space-y-3">
-              <details className="rounded-[var(--ck-radius-sm)] border border-white/10 bg-black/15 p-3" open>
-                <summary className="cursor-pointer text-sm font-medium text-[color:var(--ck-text-primary)]">
-                  Recipe information
-                </summary>
-                <div className="mt-2 space-y-1 text-xs text-[color:var(--ck-text-secondary)]">
-                  <div>
-                    <span className="text-[color:var(--ck-text-tertiary)]">Recipe id:</span> {fm?.id ?? recipe.id}
-                  </div>
-                  <div>
-                    <span className="text-[color:var(--ck-text-tertiary)]">Version:</span> {fm?.version ?? "(unknown)"}
-                  </div>
-                  <div>
-                    <span className="text-[color:var(--ck-text-tertiary)]">Team id:</span> {fm?.team?.teamId ?? "(not set)"}
-                  </div>
-                  {fm?.description ? <div className="whitespace-pre-wrap">{fm.description}</div> : null}
-                </div>
-              </details>
-
-              <details className="rounded-[var(--ck-radius-sm)] border border-white/10 bg-black/15 p-3">
-                <summary className="cursor-pointer text-sm font-medium text-[color:var(--ck-text-primary)]">
-                  Agents ({fm?.agents?.length ?? 0})
-                </summary>
-                <div className="mt-2 space-y-2">
-                  {(fm?.agents ?? []).map((a, idx) => (
-                    <details
-                      key={`${a.role ?? "agent"}:${idx}`}
-                      className="rounded-[var(--ck-radius-sm)] border border-white/10 bg-black/20 p-3"
-                    >
-                      <summary className="cursor-pointer text-sm text-[color:var(--ck-text-primary)]">
-                        <span className="font-medium">{a.name ?? a.role ?? "(unnamed)"}</span>
-                        {a.role ? <span className="text-[color:var(--ck-text-tertiary)]"> — {a.role}</span> : null}
-                      </summary>
-                      <div className="mt-2 space-y-1 text-xs text-[color:var(--ck-text-secondary)]">
-                        <div>
-                          <span className="text-[color:var(--ck-text-tertiary)]">Role:</span> {a.role ?? "(none)"}
-                        </div>
-                        <div>
-                          <span className="text-[color:var(--ck-text-tertiary)]">Tools profile:</span> {a.tools?.profile ?? "(default)"}
-                        </div>
-                        <div>
-                          <span className="text-[color:var(--ck-text-tertiary)]">Allow:</span>{" "}
-                          {(a.tools?.allow ?? []).length ? (a.tools?.allow ?? []).join(", ") : "(none)"}
-                        </div>
-                        <div>
-                          <span className="text-[color:var(--ck-text-tertiary)]">Deny:</span>{" "}
-                          {(a.tools?.deny ?? []).length ? (a.tools?.deny ?? []).join(", ") : "(none)"}
-                        </div>
-
-                        <div className="pt-1">
-                          <span className="text-[color:var(--ck-text-tertiary)]">Expected files:</span>{" "}
-                          {expectedFilesForRole(fm, a.role).length
-                            ? expectedFilesForRole(fm, a.role).join(", ")
-                            : "(not listed)"}
-                        </div>
-                      </div>
-                    </details>
-                  ))}
-                  {(!fm?.agents || fm.agents.length === 0) ? (
-                    <div className="text-xs text-[color:var(--ck-text-tertiary)]">(No agents listed in frontmatter)</div>
-                  ) : null}
-                </div>
-              </details>
-
-              <details className="rounded-[var(--ck-radius-sm)] border border-white/10 bg-black/15 p-3">
-                <summary className="cursor-pointer text-sm font-medium text-[color:var(--ck-text-primary)]">
-                  Cron jobs ({fm?.cronJobs?.length ?? 0})
-                </summary>
-                <div className="mt-2 space-y-2">
-                  {(fm?.cronJobs ?? []).map((c, idx) => (
-                    <details
-                      key={`${c.id ?? "cron"}:${idx}`}
-                      className="rounded-[var(--ck-radius-sm)] border border-white/10 bg-black/20 p-3"
-                    >
-                      <summary className="cursor-pointer text-sm text-[color:var(--ck-text-primary)]">
-                        <span className="font-medium">{c.name ?? c.id ?? "(unnamed)"}</span>
-                        {c.schedule ? <span className="text-[color:var(--ck-text-tertiary)]"> — {c.schedule}</span> : null}
-                      </summary>
-                      <div className="mt-2 space-y-1 text-xs text-[color:var(--ck-text-secondary)]">
-                        {c.agentId ? (
-                          <div>
-                            <span className="text-[color:var(--ck-text-tertiary)]">Agent:</span> {c.agentId}
-                          </div>
-                        ) : null}
-                        {c.channel ? (
-                          <div>
-                            <span className="text-[color:var(--ck-text-tertiary)]">Channel:</span> {c.channel}
-                          </div>
-                        ) : null}
-                        {typeof c.enabledByDefault === "boolean" ? (
-                          <div>
-                            <span className="text-[color:var(--ck-text-tertiary)]">Enabled by default:</span>{" "}
-                            {c.enabledByDefault ? "yes" : "no"}
-                          </div>
-                        ) : null}
-                        {c.message ? (
-                          <div className="mt-2 whitespace-pre-wrap rounded-[var(--ck-radius-sm)] border border-white/10 bg-black/25 p-2 text-[11px] text-[color:var(--ck-text-primary)]">
-                            {c.message}
-                          </div>
-                        ) : null}
-                      </div>
-                    </details>
-                  ))}
-                  {(!fm?.cronJobs || fm.cronJobs.length === 0) ? (
-                    <div className="text-xs text-[color:var(--ck-text-tertiary)]">(No cron jobs listed in frontmatter)</div>
-                  ) : null}
-                </div>
-              </details>
-            </div>
-          </div>
+          <TeamRecipePanelContent recipe={recipe} fm={fm} fmErr={fmErr} onOpenCreateTeam={openCreateTeam} />
         ) : (
-          <div className="ck-glass-strong p-4">
-            <div className="flex items-start justify-between gap-3">
-              <div>
-                <div className="text-sm font-medium text-[color:var(--ck-text-primary)]">Agent recipe</div>
-                <div className="mt-1 text-xs text-[color:var(--ck-text-tertiary)]">
-                  Create an agent from this recipe. Creating an Agent runs <code>openclaw recipes scaffold</code> with <code>--apply-config</code>.
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={openCreateAgent}
-                className="shrink-0 rounded-[var(--ck-radius-sm)] bg-[var(--ck-accent-red)] px-3 py-2 text-sm font-medium text-white shadow-[var(--ck-shadow-1)] transition-colors hover:bg-[var(--ck-accent-red-hover)] active:bg-[var(--ck-accent-red-active)]"
-              >
-                Create Agent
-              </button>
-            </div>
-
-            {afmErr ? (
-              <div className="mt-4 rounded-[var(--ck-radius-sm)] border border-white/10 bg-black/20 p-3 text-xs text-[color:var(--ck-text-primary)]">
-                Frontmatter parse error: {afmErr}
-              </div>
-            ) : null}
-
-            <div className="mt-4 space-y-3">
-              <details className="rounded-[var(--ck-radius-sm)] border border-white/10 bg-black/15 p-3" open>
-                <summary className="cursor-pointer text-sm font-medium text-[color:var(--ck-text-primary)]">
-                  Recipe information
-                </summary>
-                <div className="mt-2 space-y-1 text-xs text-[color:var(--ck-text-secondary)]">
-                  <div>
-                    <span className="text-[color:var(--ck-text-tertiary)]">Recipe id:</span> {afm?.id ?? recipe.id}
-                  </div>
-                  <div>
-                    <span className="text-[color:var(--ck-text-tertiary)]">Version:</span> {afm?.version ?? "(unknown)"}
-                  </div>
-                  {afm?.description ? <div className="whitespace-pre-wrap">{afm.description}</div> : null}
-                </div>
-              </details>
-
-              <details className="rounded-[var(--ck-radius-sm)] border border-white/10 bg-black/15 p-3">
-                <summary className="cursor-pointer text-sm font-medium text-[color:var(--ck-text-primary)]">
-                  Files ({Object.keys(afm?.templates ?? {}).length})
-                </summary>
-                <div className="mt-2 space-y-1 text-xs text-[color:var(--ck-text-secondary)]">
-                  {Object.keys(afm?.templates ?? {}).length ? (
-                    <ul className="list-disc space-y-1 pl-5">
-                      {Object.keys(afm?.templates ?? {}).map((k) => (
-                        <li key={k}>
-                          <span className="font-mono text-[11px]">{k}</span>
-                          <span className="text-[color:var(--ck-text-tertiary)]"> → </span>
-                          <span className="font-mono text-[11px]">{agentTemplateKeyToFileName(k)}</span>
-                        </li>
-                      ))}
-                    </ul>
-                  ) : (
-                    <div className="text-[color:var(--ck-text-tertiary)]">(No templates listed in frontmatter)</div>
-                  )}
-                </div>
-              </details>
-            </div>
-          </div>
+          <AgentRecipePanelContent recipe={recipe} afm={afm as AgentRecipeFrontmatter | null} afmErr={afmErr} onOpenCreateAgent={openCreateAgent} />
         )}
       </div>
 
-      {createOpen ? (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 p-4" role="dialog" aria-modal="true">
-          <div className="ck-glass w-full max-w-lg p-5">
-            <div className="flex items-start justify-between gap-3">
-              <div className="min-w-0">
-                <div className="truncate text-lg font-semibold tracking-tight">Create Team</div>
-                <div className="mt-1 text-xs text-[color:var(--ck-text-secondary)]">From recipe: {recipe.id}</div>
-              </div>
-              <button
-                type="button"
-                onClick={() => (!creating ? setCreateOpen(false) : null)}
-                className="rounded-[var(--ck-radius-sm)] px-2 py-1 text-sm text-[color:var(--ck-text-secondary)] hover:text-[color:var(--ck-text-primary)]"
-              >
-                Close
-              </button>
-            </div>
-
-            <div className="mt-4 space-y-3">
-              <label className="block">
-                <div className="text-xs font-medium text-[color:var(--ck-text-secondary)]">Team id</div>
-                <input
-                  value={teamId}
-                  onChange={(e) => setTeamId(e.target.value)}
-                  placeholder="e.g. acme"
-                  className="mt-2 w-full rounded-[var(--ck-radius-sm)] border border-white/10 bg-black/25 px-3 py-2 text-sm text-[color:var(--ck-text-primary)]"
-                  disabled={creating}
-                />
-              </label>
-
-              <label className="block">
-                <div className="text-xs font-medium text-[color:var(--ck-text-secondary)]">Install cron jobs</div>
-                <select
-                  value={cronInstallChoice}
-                  onChange={(e) => setCronInstallChoice(e.target.value as "yes" | "no")}
-                  className="mt-2 w-full rounded-[var(--ck-radius-sm)] border border-white/10 bg-black/25 px-3 py-2 text-sm text-[color:var(--ck-text-primary)]"
-                  disabled={creating}
-                >
-                  <option value="no">No (recommended)</option>
-                  <option value="yes">Yes</option>
-                </select>
-                <div className="mt-1 text-xs text-[color:var(--ck-text-tertiary)]">
-                  Kitchen scaffolds non-interactively; this controls the one-time cron install choice for this run.
-                </div>
-              </label>
-
-              {createMsg ? (
-                <div className="rounded-[var(--ck-radius-sm)] border border-white/10 bg-black/20 p-3 text-sm">{createMsg}</div>
-              ) : null}
-
-              <div className="flex justify-end gap-2 pt-2">
-                <button
-                  type="button"
-                  disabled={creating}
-                  onClick={() => setCreateOpen(false)}
-                  className="rounded-[var(--ck-radius-sm)] border border-white/10 bg-white/5 px-3 py-2 text-sm font-medium text-[color:var(--ck-text-primary)] transition-colors hover:bg-white/10 disabled:opacity-50"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="button"
-                  disabled={creating}
-                  onClick={onSubmitCreateTeam}
-                  className="rounded-[var(--ck-radius-sm)] bg-[var(--ck-accent-red)] px-3 py-2 text-sm font-medium text-white shadow-[var(--ck-shadow-1)] transition-colors hover:bg-[var(--ck-accent-red-hover)] active:bg-[var(--ck-accent-red-active)] disabled:opacity-50"
-                >
-                  {creating ? "Creating…" : "Create Team"}
-                </button>
-              </div>
-            </div>
+      <RecipeEditorCreateModal
+        open={createOpen}
+        title="Create Team"
+        recipeId={recipe.id}
+        busy={creating}
+        error={createMsg || undefined}
+        onClose={() => setCreateOpen(false)}
+        onConfirm={onSubmitCreateTeam}
+        confirmLabel="Create Team"
+      >
+        <label className="block">
+          <div className="text-xs font-medium text-[color:var(--ck-text-secondary)]">Team id</div>
+          <input
+            value={teamId}
+            onChange={(e) => setTeamId(e.target.value)}
+            placeholder="e.g. acme"
+            className="mt-2 w-full rounded-[var(--ck-radius-sm)] border border-white/10 bg-black/25 px-3 py-2 text-sm text-[color:var(--ck-text-primary)]"
+            disabled={creating}
+          />
+        </label>
+        <label className="block">
+          <div className="text-xs font-medium text-[color:var(--ck-text-secondary)]">Install cron jobs</div>
+          <select
+            value={cronInstallChoice}
+            onChange={(e) => setCronInstallChoice(e.target.value as "yes" | "no")}
+            className="mt-2 w-full rounded-[var(--ck-radius-sm)] border border-white/10 bg-black/25 px-3 py-2 text-sm text-[color:var(--ck-text-primary)]"
+            disabled={creating}
+          >
+            <option value="no">No (recommended)</option>
+            <option value="yes">Yes</option>
+          </select>
+          <div className="mt-1 text-xs text-[color:var(--ck-text-tertiary)]">
+            Kitchen scaffolds non-interactively; this controls the one-time cron install choice for this run.
           </div>
-        </div>
-      ) : null}
+        </label>
+      </RecipeEditorCreateModal>
 
-      {createAgentOpen ? (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 p-4" role="dialog" aria-modal="true">
-          <div className="ck-glass w-full max-w-lg p-5">
-            <div className="flex items-start justify-between gap-3">
-              <div className="min-w-0">
-                <div className="truncate text-lg font-semibold tracking-tight">Create Agent</div>
-                <div className="mt-1 text-xs text-[color:var(--ck-text-secondary)]">From recipe: {recipe.id}</div>
-              </div>
-              <button
-                type="button"
-                onClick={() => (!creatingAgent ? setCreateAgentOpen(false) : null)}
-                className="rounded-[var(--ck-radius-sm)] px-2 py-1 text-sm text-[color:var(--ck-text-secondary)] hover:text-[color:var(--ck-text-primary)]"
-              >
-                Close
-              </button>
-            </div>
-
-            <div className="mt-4 space-y-3">
-              <label className="block">
-                <div className="text-xs font-medium text-[color:var(--ck-text-secondary)]">Agent id</div>
-                <input
-                  value={agentId}
-                  onChange={(e) => setAgentId(e.target.value)}
-                  placeholder="e.g. larry"
-                  className="mt-2 w-full rounded-[var(--ck-radius-sm)] border border-white/10 bg-black/25 px-3 py-2 text-sm text-[color:var(--ck-text-primary)]"
-                  disabled={creatingAgent}
-                />
-              </label>
-
-              <label className="block">
-                <div className="text-xs font-medium text-[color:var(--ck-text-secondary)]">Name (optional)</div>
-                <input
-                  value={agentName}
-                  onChange={(e) => setAgentName(e.target.value)}
-                  placeholder="e.g. Larry"
-                  className="mt-2 w-full rounded-[var(--ck-radius-sm)] border border-white/10 bg-black/25 px-3 py-2 text-sm text-[color:var(--ck-text-primary)]"
-                  disabled={creatingAgent}
-                />
-              </label>
-
-              {createAgentMsg ? (
-                <div className="rounded-[var(--ck-radius-sm)] border border-white/10 bg-black/20 p-3 text-sm">{createAgentMsg}</div>
-              ) : null}
-
-              <div className="flex justify-end gap-2 pt-2">
-                <button
-                  type="button"
-                  disabled={creatingAgent}
-                  onClick={() => setCreateAgentOpen(false)}
-                  className="rounded-[var(--ck-radius-sm)] border border-white/10 bg-white/5 px-3 py-2 text-sm font-medium text-[color:var(--ck-text-primary)] transition-colors hover:bg-white/10 disabled:opacity-50"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="button"
-                  disabled={creatingAgent}
-                  onClick={onSubmitCreateAgent}
-                  className="rounded-[var(--ck-radius-sm)] bg-[var(--ck-accent-red)] px-3 py-2 text-sm font-medium text-white shadow-[var(--ck-shadow-1)] transition-colors hover:bg-[var(--ck-accent-red-hover)] active:bg-[var(--ck-accent-red-active)] disabled:opacity-50"
-                >
-                  {creatingAgent ? "Creating…" : "Create Agent"}
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      ) : null}
+      <RecipeEditorCreateModal
+        open={createAgentOpen}
+        title="Create Agent"
+        recipeId={recipe.id}
+        busy={creatingAgent}
+        error={createAgentMsg || undefined}
+        onClose={() => setCreateAgentOpen(false)}
+        onConfirm={onSubmitCreateAgent}
+        confirmLabel="Create Agent"
+      >
+        <label className="block">
+          <div className="text-xs font-medium text-[color:var(--ck-text-secondary)]">Agent id</div>
+          <input
+            value={agentId}
+            onChange={(e) => setAgentId(e.target.value)}
+            placeholder="e.g. larry"
+            className="mt-2 w-full rounded-[var(--ck-radius-sm)] border border-white/10 bg-black/25 px-3 py-2 text-sm text-[color:var(--ck-text-primary)]"
+            disabled={creatingAgent}
+          />
+        </label>
+        <label className="block">
+          <div className="text-xs font-medium text-[color:var(--ck-text-secondary)]">Name (optional)</div>
+          <input
+            value={agentName}
+            onChange={(e) => setAgentName(e.target.value)}
+            placeholder="e.g. Larry"
+            className="mt-2 w-full rounded-[var(--ck-radius-sm)] border border-white/10 bg-black/25 px-3 py-2 text-sm text-[color:var(--ck-text-primary)]"
+            disabled={creatingAgent}
+          />
+        </label>
+      </RecipeEditorCreateModal>
 
       <p className="mt-6 text-xs text-[color:var(--ck-text-tertiary)]">
         This page edits the recipe markdown and previews what will be created when you click{" "}

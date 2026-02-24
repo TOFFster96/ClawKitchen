@@ -5,6 +5,26 @@ import { readOpenClawConfig, teamDirFromBaseWorkspace } from "@/lib/paths";
 
 export type TeamContext = { teamId: string; teamDir: string };
 
+/** Error response for install-skill openclaw failures. Use when runOpenClaw returns !ok. */
+export function installSkillErrorResponse(
+  args: string[],
+  res: { stdout?: string; stderr?: string; exitCode?: number },
+  extra?: Record<string, unknown>
+): NextResponse {
+  const stdout = res.stdout?.trim();
+  const stderr = res.stderr?.trim();
+  return NextResponse.json(
+    {
+      ok: false,
+      error: stderr || stdout || `openclaw ${args.join(" ")} failed (exit=${res.exitCode})`,
+      stdout: res.stdout,
+      stderr: res.stderr,
+      ...extra,
+    },
+    { status: 500 }
+  );
+}
+
 async function resolveTeamContext(teamId: string): Promise<TeamContext | NextResponse> {
   if (!teamId) return NextResponse.json({ ok: false, error: "teamId is required" }, { status: 400 });
 

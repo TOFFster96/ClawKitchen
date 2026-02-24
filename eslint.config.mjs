@@ -31,6 +31,11 @@ const eslintConfig = defineConfig([
     files: ["scripts/refactor-report.mjs"],
     rules: { "sonarjs/no-os-command-from-path": "off" },
   },
+  // Team editor: large form with multiple tabs; complexity distributed across handlers
+  {
+    files: ["**/team-editor.tsx"],
+    rules: { "sonarjs/cognitive-complexity": ["warn", 40] },
+  },
   // Override default ignores of eslint-config-next.
   globalIgnores([
     // Default ignores of eslint-config-next:

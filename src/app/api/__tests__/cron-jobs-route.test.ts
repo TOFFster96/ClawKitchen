@@ -5,8 +5,22 @@ vi.mock("@/lib/gateway", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/lib/gateway")>();
   return { ...actual, toolsInvoke: vi.fn() };
 });
-vi.mock("@/lib/paths", () => ({ getTeamWorkspaceDir: vi.fn() }));
-vi.mock("node:fs/promises", () => ({ default: { readFile: vi.fn() } }));
+vi.mock("@/lib/paths", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/paths")>();
+  return {
+    ...actual,
+    getTeamWorkspaceDir: vi.fn(),
+    readOpenClawConfig: vi.fn().mockResolvedValue({ agents: { defaults: { workspace: "/home/test/.openclaw/agents" } } }),
+  };
+});
+vi.mock("@/lib/openclaw", () => ({ runOpenClaw: vi.fn().mockResolvedValue({ ok: true, stdout: "[]" }) }));
+vi.mock("node:fs/promises", () => ({
+  default: {
+    readFile: vi.fn(),
+    readdir: vi.fn().mockResolvedValue([]),
+    stat: vi.fn(),
+  },
+}));
 
 import { toolsInvoke } from "@/lib/gateway";
 import { getTeamWorkspaceDir } from "@/lib/paths";
@@ -17,6 +31,8 @@ describe("api cron jobs route", () => {
     vi.mocked(toolsInvoke).mockReset();
     vi.mocked(getTeamWorkspaceDir).mockReset();
     vi.mocked(fs.readFile).mockReset();
+    vi.mocked(fs.readdir).mockReset();
+    vi.mocked(fs.readdir).mockResolvedValue([]);
   });
 
   it("returns empty jobs when toolsInvoke has no text", async () => {

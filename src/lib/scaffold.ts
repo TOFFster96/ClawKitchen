@@ -15,10 +15,18 @@ export type ScaffoldReqBody =
       overwrite?: boolean;
     };
 
-export function buildScaffoldArgs(body: ScaffoldReqBody): string[] {
+export type BuildScaffoldArgsOptions = {
+  allowExisting?: boolean;
+};
+
+export function buildScaffoldArgs(
+  body: ScaffoldReqBody,
+  options?: BuildScaffoldArgsOptions
+): string[] {
   const args: string[] = ["recipes", body.kind === "team" ? "scaffold-team" : "scaffold", body.recipeId];
   if (body.overwrite) args.push("--overwrite");
   if (body.applyConfig) args.push("--apply-config");
+  if (options?.allowExisting || body.overwrite) args.push("--overwrite-recipe");
   if (body.kind === "agent") {
     if (body.agentId) args.push("--agent-id", body.agentId);
     if (body.name) args.push("--name", body.name);

@@ -36,7 +36,7 @@ describe("scaffold", () => {
           overwrite: true,
           applyConfig: true,
         })
-      ).toEqual(["recipes", "scaffold", "r", "--overwrite", "--apply-config"]);
+      ).toEqual(["recipes", "scaffold", "r", "--overwrite", "--apply-config", "--overwrite-recipe"]);
     });
 
     it("builds minimal team args", () => {

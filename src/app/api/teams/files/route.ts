@@ -1,24 +1,12 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { NextResponse } from "next/server";
-import { readOpenClawConfig } from "@/lib/paths";
-
-function teamDirFromTeamId(baseWorkspace: string, teamId: string) {
-  return path.resolve(baseWorkspace, "..", `workspace-${teamId}`);
-}
+import { getTeamContextFromQuery, listWorkspaceFiles } from "@/lib/api-route-helpers";
 
 export async function GET(req: Request) {
-  const { searchParams } = new URL(req.url);
-  const teamId = String(searchParams.get("teamId") ?? "").trim();
-  if (!teamId) return NextResponse.json({ ok: false, error: "teamId is required" }, { status: 400 });
-
-  const cfg = await readOpenClawConfig();
-  const baseWorkspace = String(cfg.agents?.defaults?.workspace ?? "").trim();
-  if (!baseWorkspace) {
-    return NextResponse.json({ ok: false, error: "agents.defaults.workspace not set" }, { status: 500 });
-  }
-
-  const teamDir = teamDirFromTeamId(baseWorkspace, teamId);
+  const ctx = await getTeamContextFromQuery(req);
+  if (ctx instanceof Response) return ctx;
+  const { teamId, teamDir } = ctx;
 
   // QA checklist should only be required when:
   // - the team has a test role, and/or
@@ -71,25 +59,7 @@ export async function GET(req: Request) {
     { name: "MEMORY.md", required: false, rationale: "Optional curated memory" },
   ];
 
-  const files = await Promise.all(
-    candidates.map(async (c) => {
-      const p = path.join(teamDir, c.name);
-      try {
-        const st = await fs.stat(p);
-        return {
-          name: c.name,
-          required: c.required,
-          rationale: c.rationale,
-          path: p,
-          missing: false,
-          size: st.size,
-          updatedAtMs: st.mtimeMs,
-        };
-      } catch {
-        return { name: c.name, required: c.required, rationale: c.rationale, path: p, missing: true };
-      }
-    })
-  );
+  const files = await listWorkspaceFiles(teamDir, candidates);
 
   return NextResponse.json({ ok: true, teamId, teamDir, files });
 }

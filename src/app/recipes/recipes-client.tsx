@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { ScaffoldOverlay, type ScaffoldOverlayStep } from "@/components/ScaffoldOverlay";
+import { fetchScaffold } from "@/lib/scaffold-client";
 import { useToast } from "@/components/ToastProvider";
 import { CreateTeamModal } from "./CreateTeamModal";
 import { CreateAgentModal } from "./CreateAgentModal";
@@ -15,6 +16,12 @@ type Recipe = {
   kind: "agent" | "team";
   source: "builtin" | "workspace";
 };
+
+function getEditLabel(isInstalledAgent: boolean, source: string): string {
+  if (isInstalledAgent) return "Edit agent";
+  if (source === "builtin") return "View recipe";
+  return "Edit recipe";
+}
 
 function RecipesSection({
   title,
@@ -44,11 +51,7 @@ function RecipesSection({
             const editHref = isInstalledAgent
               ? `/agents/${encodeURIComponent(r.id)}`
               : `/recipes/${encodeURIComponent(r.id)}`;
-            const editLabel = isInstalledAgent
-              ? "Edit agent"
-              : r.source === "builtin"
-                ? "View recipe"
-                : "Edit recipe";
+            const editLabel = getEditLabel(isInstalledAgent, r.source);
 
             return (
               <div
@@ -243,20 +246,24 @@ export default function RecipesClient({
     return false;
   }
 
+  function validateTeamIdForCreate(recipe: { id: string } | null, teamId: string): string | null {
+    if (!recipe) return null;
+    const t = teamId.trim();
+    if (!t) return "Team id is required.";
+    if (t === recipe.id) return `Team id cannot be the same as the recipe id (${recipe.id}). Choose a new team id.`;
+    return null;
+  }
+
   async function confirmCreateTeam() {
     const recipe = createRecipe;
+    const err = validateTeamIdForCreate(recipe, createTeamId);
+    if (err) {
+      setCreateError(err);
+      return;
+    }
     if (!recipe) return;
 
     const t = createTeamId.trim();
-    if (!t) {
-      setCreateError("Team id is required.");
-      return;
-    }
-    if (t === recipe.id) {
-      setCreateError(`Team id cannot be the same as the recipe id (${recipe.id}). Choose a new team id.`);
-      return;
-    }
-
     setCreateBusy(true);
     setCreateError(null);
 
@@ -269,20 +276,13 @@ export default function RecipesClient({
     let serveTimer: ReturnType<typeof setTimeout> | null = null;
 
     try {
-      const res = await fetch("/api/scaffold", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          kind: "team",
-          recipeId: recipe.id,
-          teamId: t,
-          applyConfig: true,
-          overwrite: false,
-          cronInstallChoice: installCron ? "yes" : "no",
-        }),
+      const { res, json } = await fetchScaffold({
+        kind: "team",
+        recipeId: recipe.id,
+        teamId: t,
+        cronInstallChoice: installCron ? "yes" : "no",
       });
-      const json = await res.json();
-      if (!res.ok || !json.ok) throw new Error(String(json.error || "Create team failed"));
+      if (!res.ok || !(json as { ok?: boolean }).ok) throw new Error(String((json as { error?: string }).error || "Create team failed"));
 
       setOverlayStep(2);
 
@@ -292,7 +292,7 @@ export default function RecipesClient({
         setOverlayStep((prev) => (prev < 3 ? 3 : prev));
       }, 20_000);
 
-      const stderr = typeof json.stderr === "string" ? json.stderr : "";
+      const stderr = typeof (json as { stderr?: unknown }).stderr === "string" ? (json as { stderr: string }).stderr : "";
 
       // Some CLI failures currently still surface as { ok: true, stderr: "...Error: ..." }.
       // Treat those as hard failures so we don't navigate into a broken team page.
@@ -362,20 +362,13 @@ export default function RecipesClient({
     let serveTimer: ReturnType<typeof setTimeout> | null = null;
 
     try {
-      const res = await fetch("/api/scaffold", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          kind: "agent",
-          recipeId: recipe.id,
-          agentId: a,
-          name: createAgentName.trim() || undefined,
-          applyConfig: true,
-          overwrite: false,
-        }),
+      const { res, json } = await fetchScaffold({
+        kind: "agent",
+        recipeId: recipe.id,
+        agentId: a,
+        name: createAgentName.trim() || undefined,
       });
-      const json = await res.json();
-      if (!res.ok || !json.ok) throw new Error(String(json.error || "Create agent failed"));
+      if (!res.ok || !(json as { ok?: boolean }).ok) throw new Error(String((json as { error?: string }).error || "Create agent failed"));
 
       setOverlayStep(2);
 
@@ -383,7 +376,7 @@ export default function RecipesClient({
         setOverlayStep((prev) => (prev < 3 ? 3 : prev));
       }, 20_000);
 
-      const stderr = typeof json.stderr === "string" ? json.stderr : "";
+      const stderr = typeof (json as { stderr?: unknown }).stderr === "string" ? (json as { stderr: string }).stderr : "";
 
       if (/Failed to start CLI:/i.test(stderr) || /\bError: /i.test(stderr)) {
         throw new Error(stderr.trim() || "Scaffold failed");

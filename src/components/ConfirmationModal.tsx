@@ -14,6 +14,7 @@ export function ConfirmationModal({
   onConfirm,
   confirmDisabled,
   busy,
+  confirmButtonClassName,
 }: {
   open: boolean;
   onClose: () => void;
@@ -26,12 +27,17 @@ export function ConfirmationModal({
   onConfirm: () => void;
   confirmDisabled?: boolean;
   busy?: boolean;
+  /** Override confirm button styles (default: accent red) */
+  confirmButtonClassName?: string;
 }) {
   if (!open) return null;
 
   const isDisabled = confirmDisabled ?? false;
   const isBusy = busy ?? false;
   const btnLabel = isBusy && confirmBusyLabel ? confirmBusyLabel : confirmLabel;
+  const confirmClass =
+    confirmButtonClassName ??
+    "rounded-[var(--ck-radius-sm)] bg-[var(--ck-accent-red)] px-3 py-2 text-sm font-medium text-white shadow-[var(--ck-shadow-1)] transition-colors hover:bg-[var(--ck-accent-red-hover)] disabled:opacity-50";
 
   return createPortal(
     <div className="fixed inset-0 z-[200]">
@@ -60,7 +66,7 @@ export function ConfirmationModal({
                 type="button"
                 disabled={isDisabled || isBusy}
                 onClick={onConfirm}
-                className="rounded-[var(--ck-radius-sm)] bg-[var(--ck-accent-red)] px-3 py-2 text-sm font-medium text-white shadow-[var(--ck-shadow-1)] hover:bg-[var(--ck-accent-red-hover)] disabled:opacity-50"
+                className={confirmClass}
               >
                 {btnLabel}
               </button>

@@ -19,6 +19,300 @@ type RecipeDetail = RecipeListItem & {
   filePath: string | null;
 };
 
+type TeamFileEntry = { name: string; missing: boolean; required?: boolean; rationale?: string };
+type TeamAgentEntry = { id: string; identityName?: string };
+
+function safeParseJson<T>(text: string, def: T): T {
+  try {
+    return JSON.parse(text) as T;
+  } catch {
+    return def;
+  }
+}
+
+async function loadTeamTabData(
+  teamId: string,
+  setters: {
+    setTeamFiles: (f: TeamFileEntry[]) => void;
+    setCronJobs: (j: unknown[]) => void;
+    setTeamAgents: (a: TeamAgentEntry[]) => void;
+    setSkillsList: (s: string[]) => void;
+    setAvailableSkills: (s: string[]) => void;
+    setSelectedSkill: (fn: (prev: string) => string) => void;
+    setTeamFilesLoading: (v: boolean) => void;
+    setCronLoading: (v: boolean) => void;
+    setTeamAgentsLoading: (v: boolean) => void;
+    setSkillsLoading: (v: boolean) => void;
+  }
+): Promise<void> {
+  setters.setTeamFilesLoading(true);
+  setters.setCronLoading(true);
+  setters.setTeamAgentsLoading(true);
+  setters.setSkillsLoading(true);
+  try {
+    const [filesRes, cronRes, agentsRes, skillsRes, availableSkillsRes] = await Promise.all([
+      fetch(`/api/teams/files?teamId=${encodeURIComponent(teamId)}`, { cache: "no-store" }),
+      fetch(`/api/cron/jobs?teamId=${encodeURIComponent(teamId)}`, { cache: "no-store" }),
+      fetch("/api/agents", { cache: "no-store" }),
+      fetch(`/api/teams/skills?teamId=${encodeURIComponent(teamId)}`, { cache: "no-store" }),
+      fetch("/api/skills/available", { cache: "no-store" }),
+    ]);
+
+    const [filesText, cronText, agentsText, skillsText, availableText] = await Promise.all([
+      filesRes.text(),
+      cronRes.text(),
+      agentsRes.text(),
+      skillsRes.text(),
+      availableSkillsRes.text(),
+    ]);
+
+    const filesJson = safeParseJson<{ ok?: boolean; files?: unknown[] }>(filesText, {});
+    if (filesRes.ok && filesJson.ok && Array.isArray(filesJson.files)) {
+      setters.setTeamFiles(
+        filesJson.files.map((f) => {
+          const entry = f as { name?: unknown; missing?: unknown; required?: unknown; rationale?: unknown };
+          return {
+            name: String(entry.name ?? ""),
+            missing: Boolean(entry.missing),
+            required: Boolean(entry.required),
+            rationale: typeof entry.rationale === "string" ? entry.rationale : undefined,
+          };
+        }),
+      );
+    }
+
+    const cronJson = safeParseJson<{ ok?: boolean; jobs?: unknown[] }>(cronText, {});
+    if (cronRes.ok && cronJson.ok && Array.isArray(cronJson.jobs)) setters.setCronJobs(cronJson.jobs);
+
+    const agentsJson = safeParseJson<{ agents?: unknown[] }>(agentsText, {});
+    if (agentsRes.ok && Array.isArray(agentsJson.agents)) {
+      const filtered = agentsJson.agents.filter((a) => String((a as { id?: unknown }).id ?? "").startsWith(`${teamId}-`));
+      setters.setTeamAgents(
+        filtered.map((a) => {
+          const agent = a as { id?: unknown; identityName?: unknown };
+          return { id: String(agent.id ?? ""), identityName: typeof agent.identityName === "string" ? agent.identityName : undefined };
+        }),
+      );
+    }
+
+    const skillsJson = safeParseJson<{ ok?: boolean; skills?: unknown[] }>(skillsText, {});
+    if (skillsRes.ok && skillsJson.ok && Array.isArray(skillsJson.skills)) setters.setSkillsList(skillsJson.skills as string[]);
+
+    const availableJson = safeParseJson<{ ok?: boolean; skills?: unknown[] }>(availableText, {});
+    if (availableSkillsRes.ok && availableJson.ok && Array.isArray(availableJson.skills)) {
+      const list = availableJson.skills as string[];
+      setters.setAvailableSkills(list);
+      setters.setSelectedSkill((prev) => {
+        const p = String(prev ?? "").trim();
+        if (p && list.includes(p)) return p;
+        return list[0] ?? "";
+      });
+    }
+  } finally {
+    setters.setTeamFilesLoading(false);
+    setters.setCronLoading(false);
+    setters.setTeamAgentsLoading(false);
+    setters.setSkillsLoading(false);
+  }
+}
+
+async function loadTeamEditorInitial(
+  teamId: string,
+  setters: {
+    setRecipes: (r: RecipeListItem[]) => void;
+    setLockedFromId: (v: string | null) => void;
+    setLockedFromName: (v: string | null) => void;
+    setProvenanceMissing: (v: boolean) => void;
+    setFromId: (v: string) => void;
+    setTeamMetaRecipeHash: (v: string | null) => void;
+    setTeamFiles: (f: TeamFileEntry[]) => void;
+    setCronJobs: (j: unknown[]) => void;
+    setTeamAgents: (a: TeamAgentEntry[]) => void;
+    setSkillsList: (s: string[]) => void;
+    setAvailableSkills: (s: string[]) => void;
+    setSelectedSkill: (fn: (prev: string) => string) => void;
+    setTeamFilesLoading: (v: boolean) => void;
+    setCronLoading: (v: boolean) => void;
+    setTeamAgentsLoading: (v: boolean) => void;
+    setSkillsLoading: (v: boolean) => void;
+  }
+): Promise<void> {
+  const [recipesRes, metaRes] = await Promise.all([
+    fetch("/api/recipes", { cache: "no-store" }),
+    fetch(`/api/teams/meta?teamId=${encodeURIComponent(teamId)}`, { cache: "no-store" }),
+  ]);
+
+  const json = await recipesRes.json();
+  const list = (json.recipes ?? []) as RecipeListItem[];
+  setters.setRecipes(list);
+
+  let locked: { recipeId: string; recipeName?: string } | null = null;
+  try {
+    const metaJson = await metaRes.json();
+    const meta = metaJson.meta as { recipeId?: unknown; recipeName?: unknown; recipeHash?: unknown } | undefined;
+    if (metaRes.ok && metaJson.ok && meta?.recipeId) {
+      locked = {
+        recipeId: String(meta.recipeId),
+        recipeName: typeof meta.recipeName === "string" ? meta.recipeName : undefined,
+      };
+      setters.setTeamMetaRecipeHash(typeof meta.recipeHash === "string" ? meta.recipeHash : null);
+    } else {
+      setters.setTeamMetaRecipeHash(null);
+    }
+  } catch {
+    setters.setTeamMetaRecipeHash(null);
+  }
+
+  if (locked) {
+    setters.setLockedFromId(locked.recipeId);
+    setters.setLockedFromName(locked.recipeName ?? null);
+    setters.setProvenanceMissing(false);
+    setters.setFromId(locked.recipeId);
+  } else {
+    setters.setLockedFromId(null);
+    setters.setLockedFromName(null);
+    setters.setProvenanceMissing(true);
+    const preferred = list.find((r) => r.kind === "team" && r.id === teamId);
+    const fallback = list.find((r) => r.kind === "team");
+    const pick = preferred ?? fallback;
+    if (pick) setters.setFromId(pick.id);
+  }
+
+  await loadTeamTabData(teamId, {
+    setTeamFiles: setters.setTeamFiles,
+    setCronJobs: setters.setCronJobs,
+    setTeamAgents: setters.setTeamAgents,
+    setSkillsList: setters.setSkillsList,
+    setAvailableSkills: setters.setAvailableSkills,
+    setSelectedSkill: setters.setSelectedSkill,
+    setTeamFilesLoading: setters.setTeamFilesLoading,
+    setCronLoading: setters.setCronLoading,
+    setTeamAgentsLoading: setters.setTeamAgentsLoading,
+    setSkillsLoading: setters.setSkillsLoading,
+  });
+}
+
+async function fetchTeamAgentsOnce(teamId: string): Promise<{ ok: boolean; agents: TeamAgentEntry[] }> {
+  const agentsRes = await fetch("/api/agents", { cache: "no-store" });
+  const agentsJson = (await agentsRes.json()) as { agents?: unknown[] };
+  if (!agentsRes.ok) return { ok: false, agents: [] };
+  const all = Array.isArray(agentsJson.agents) ? agentsJson.agents : [];
+  const filtered = all.filter((a) => String((a as { id?: unknown }).id ?? "").startsWith(`${teamId}-`));
+  const mapped = filtered.map((a) => {
+    const agent = a as { id?: unknown; identityName?: unknown };
+    return { id: String(agent.id ?? ""), identityName: typeof agent.identityName === "string" ? agent.identityName : undefined };
+  });
+  return { ok: true, agents: mapped };
+}
+
+async function applyScaffoldAfterTeamAgentsChange(
+  teamId: string,
+  toId: string,
+  flashMessage: (msg: string, kind: "success" | "error") => void
+): Promise<void> {
+  try {
+    const sync = await fetch("/api/scaffold", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        kind: "team",
+        recipeId: toId.trim(),
+        teamId,
+        applyConfig: true,
+        overwrite: false,
+        allowExisting: true,
+        cronInstallChoice: "no",
+      }),
+    });
+    const syncJson = await sync.json();
+    if (!sync.ok) throw new Error(syncJson.error || "Failed to apply config / scaffold team");
+  } catch (e: unknown) {
+    flashMessage(e instanceof Error ? e.message : String(e), "error");
+  }
+}
+
+async function handleAddAgentToTeam(opts: {
+  teamId: string;
+  toId: string;
+  newRole: string;
+  derivedRole: string;
+  newRoleName: string;
+  content: string;
+  setContent: (c: string) => void;
+  setTeamAgents: (a: TeamAgentEntry[]) => void;
+  flashMessage: (msg: string, kind: "success" | "error") => void;
+  ensureCustomRecipeExists: (args: { overwrite: boolean }) => Promise<unknown>;
+}): Promise<void> {
+  const { teamId, toId, newRole, derivedRole, newRoleName, content, setContent, setTeamAgents, flashMessage, ensureCustomRecipeExists } = opts;
+  try {
+    await ensureCustomRecipeExists({ overwrite: false });
+  } catch (e: unknown) {
+    const msg = e instanceof Error ? e.message : String(e);
+    if (!/Recipe id already exists:/i.test(msg)) throw e;
+  }
+  const res = await fetch("/api/recipes/team-agents", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(
+      newRole === "__custom__"
+        ? { recipeId: toId.trim(), op: "add", role: derivedRole, name: newRoleName }
+        : { recipeId: toId.trim(), op: "addLike", baseRole: derivedRole, teamId, name: newRoleName },
+    ),
+  });
+  const json = await res.json();
+  if (!res.ok || !json.ok) throw new Error(json.error || "Failed updating agents list");
+  setContent(String(json.content ?? content));
+
+  await applyScaffoldAfterTeamAgentsChange(teamId, toId, flashMessage);
+
+  const expectedAgentId = typeof (json as { addedAgentId?: unknown }).addedAgentId === "string" ? (json as { addedAgentId: string }).addedAgentId : "";
+  const appeared = await pollTeamAgentsUntil(teamId, expectedAgentId, setTeamAgents, 5000);
+  if (!appeared && expectedAgentId) {
+    try {
+      void fetch("/api/gateway/restart", { method: "POST" });
+    } catch {
+      // ignore
+    }
+    await pollTeamAgentsUntil(teamId, expectedAgentId, setTeamAgents, 10000);
+  }
+  flashMessage(`Updated agents list in ${toId}`, "success");
+}
+
+async function pollTeamAgentsUntil(
+  teamId: string,
+  expectedAgentId: string,
+  setTeamAgents: (a: TeamAgentEntry[]) => void,
+  maxMs: number
+): Promise<boolean> {
+  const start = Date.now();
+  while (Date.now() - start < maxMs) {
+    try {
+      const r = await fetchTeamAgentsOnce(teamId);
+      if (r.ok) {
+        setTeamAgents(r.agents);
+        const hasExpected = expectedAgentId ? r.agents.some((a) => a.id === expectedAgentId) : false;
+        if (!expectedAgentId || hasExpected) return true;
+      }
+    } catch {
+      // ignore
+    }
+    await new Promise((res) => setTimeout(res, 500));
+  }
+  return false;
+}
+
+function replaceOrAddIdInLines(lines: string[], id: string): string[] {
+  let found = false;
+  const next = lines.map((line) => {
+    if (/^id\s*:/i.test(line)) {
+      found = true;
+      return `id: ${id}`;
+    }
+    return line;
+  });
+  if (!found) next.unshift(`id: ${id}`);
+  return next;
+}
 
 function forceFrontmatterId(md: string, id: string) {
   if (!md.startsWith("---\n")) return md;
@@ -26,24 +320,35 @@ function forceFrontmatterId(md: string, id: string) {
   if (end === -1) return md;
   const fm = md.slice(4, end);
   const body = md.slice(end + 5);
-
-  const lines = fm.split("\n");
-  let found = false;
-  const nextLines = lines.map((line) => {
-    if (/^id\s*:/i.test(line)) {
-      found = true;
-      return `id: ${id}`;
-    }
-    return line;
-  });
-  if (!found) nextLines.unshift(`id: ${id}`);
-
+  const nextLines = replaceOrAddIdInLines(fm.split("\n"), id);
   return `---\n${nextLines.join("\n")}\n---\n${body}`;
 }
 
+function patchTeamIdInLines(lines: string[], teamId: string): { next: string[]; sawTeamBlock: boolean; patched: boolean } {
+  const next: string[] = [];
+  let inTeam = false;
+  let sawTeamBlock = false;
+  let patched = false;
+
+  for (const line of lines) {
+    if (/^team\s*:\s*$/i.test(line)) {
+      inTeam = true;
+      sawTeamBlock = true;
+      next.push(line);
+      continue;
+    }
+    if (inTeam && /^\S/.test(line)) inTeam = false;
+    if (inTeam && /^\s+teamId\s*:/i.test(line)) {
+      next.push(`  teamId: ${teamId}`);
+      patched = true;
+      continue;
+    }
+    next.push(line);
+  }
+  return { next, sawTeamBlock, patched };
+}
+
 function forceFrontmatterTeamTeamId(md: string, teamId: string) {
-  // Best-effort YAML frontmatter patch without reparsing the whole recipe.
-  // Goal: ensure `team: { teamId: <id> }` matches the custom recipe id after Save.
   if (!md.startsWith("---\n")) return md;
   const end = md.indexOf("\n---\n", 4);
   if (end === -1) return md;
@@ -51,47 +356,16 @@ function forceFrontmatterTeamTeamId(md: string, teamId: string) {
   const fm = md.slice(4, end);
   const body = md.slice(end + 5);
   const lines = fm.split("\n");
+  const { next, sawTeamBlock, patched } = patchTeamIdInLines(lines, teamId);
 
-  const next: string[] = [];
-  let inTeam = false;
-  let sawTeamBlock = false;
-  let patched = false;
-
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i];
-    if (/^team\s*:\s*$/i.test(line)) {
-      inTeam = true;
-      sawTeamBlock = true;
-      next.push(line);
-      continue;
-    }
-
-    // Leave team block when indentation returns to column 0.
-    if (inTeam && /^\S/.test(line)) {
-      inTeam = false;
-    }
-
-    if (inTeam && /^\s+teamId\s*:/i.test(line)) {
-      next.push(`  teamId: ${teamId}`);
-      patched = true;
-      continue;
-    }
-
-    next.push(line);
-  }
-
-  // If there was a team block but no teamId, insert it right after `team:`.
   if (sawTeamBlock && !patched) {
     const out: string[] = [];
-    for (let i = 0; i < next.length; i++) {
-      out.push(next[i]);
-      if (/^team\s*:\s*$/i.test(next[i])) {
-        out.push(`  teamId: ${teamId}`);
-      }
+    for (const line of next) {
+      out.push(line);
+      if (/^team\s*:\s*$/i.test(line)) out.push(`  teamId: ${teamId}`);
     }
     return `---\n${out.join("\n")}\n---\n${body}`;
   }
-
   return `---\n${next.join("\n")}\n---\n${body}`;
 }
 
@@ -126,7 +400,7 @@ export default function TeamEditor({ teamId }: { teamId: string }) {
     toast.push({ kind, message: msg });
   }
 
-  const [teamFiles, setTeamFiles] = useState<Array<{ name: string; missing: boolean; required: boolean; rationale?: string }>>([]);
+  const [teamFiles, setTeamFiles] = useState<TeamFileEntry[]>([]);
   const [teamFilesLoading, setTeamFilesLoading] = useState(false);
   const [teamFileError, setTeamFileError] = useState<string>("");
   const [showOptionalFiles, setShowOptionalFiles] = useState(false);
@@ -203,161 +477,37 @@ export default function TeamEditor({ teamId }: { teamId: string }) {
   }, [teamId]);
 
   useEffect(() => {
-    (async () => {
-      setLoading(true);
-      try {
-        const [recipesRes, metaRes] = await Promise.all([
-          fetch("/api/recipes", { cache: "no-store" }),
-          fetch(`/api/teams/meta?teamId=${encodeURIComponent(teamId)}`, { cache: "no-store" }),
-        ]);
-
-        const json = await recipesRes.json();
-        const list = (json.recipes ?? []) as RecipeListItem[];
-        setRecipes(list);
-
-        // Note: do not sync toName/toId from remote state here.
-        // Edits to the target id/name must not trigger reload loops while typing.
-
-        // Prefer a recipe that corresponds to this teamId.
-        // Primary source of truth: provenance stored in the team workspace.
-        // Fallback: heuristic matching (legacy teams without provenance).
-        let locked: { recipeId: string; recipeName?: string } | null = null;
-        try {
-          const metaJson = await metaRes.json();
-          if (metaRes.ok && metaJson.ok && metaJson.meta && (metaJson.meta as { recipeId?: unknown }).recipeId) {
-            const m = metaJson.meta as { recipeId?: unknown; recipeName?: unknown; recipeHash?: unknown };
-            locked = {
-              recipeId: String(m.recipeId),
-              recipeName: typeof m.recipeName === "string" ? m.recipeName : undefined,
-            };
-            const h = typeof m.recipeHash === "string" ? m.recipeHash : null;
-            setTeamMetaRecipeHash(h);
-          } else {
-            setTeamMetaRecipeHash(null);
-          }
-        } catch {
-          // ignore
-        }
-
-        if (locked) {
-          setLockedFromId(locked.recipeId);
-          setLockedFromName(locked.recipeName ?? null);
-          setProvenanceMissing(false);
-          setFromId(locked.recipeId);
-        } else {
-          setLockedFromId(null);
-          setLockedFromName(null);
-          setProvenanceMissing(true);
-
-          const preferred = list.find((r) => r.kind === "team" && r.id === teamId);
-          const fallback = list.find((r) => r.kind === "team");
-          const pick = preferred ?? fallback;
-          if (pick) setFromId(pick.id);
-        }
-
-        // Render ASAP; load the heavier per-tab data in the background.
-        setLoading(false);
-
-        void (async () => {
-          setTeamFilesLoading(true);
-          setCronLoading(true);
-          setTeamAgentsLoading(true);
-          setSkillsLoading(true);
-
-          try {
-            const [filesRes, cronRes, agentsRes, skillsRes, availableSkillsRes] = await Promise.all([
-              fetch(`/api/teams/files?teamId=${encodeURIComponent(teamId)}`, { cache: "no-store" }),
-              fetch(`/api/cron/jobs?teamId=${encodeURIComponent(teamId)}`, { cache: "no-store" }),
-              fetch("/api/agents", { cache: "no-store" }),
-              fetch(`/api/teams/skills?teamId=${encodeURIComponent(teamId)}`, { cache: "no-store" }),
-              fetch("/api/skills/available", { cache: "no-store" }),
-            ]);
-
-            try {
-              const filesJson = (await filesRes.json()) as { ok?: boolean; files?: unknown[] };
-              if (filesRes.ok && filesJson.ok) {
-                const files = Array.isArray(filesJson.files) ? filesJson.files : [];
-                setTeamFiles(
-                  files.map((f) => {
-                    const entry = f as { name?: unknown; missing?: unknown; required?: unknown; rationale?: unknown };
-                    return {
-                      name: String(entry.name ?? ""),
-                      missing: Boolean(entry.missing),
-                      required: Boolean(entry.required),
-                      rationale: typeof entry.rationale === "string" ? entry.rationale : undefined,
-                    };
-                  }),
-                );
-              }
-            } catch {
-              // ignore
-            }
-
-            try {
-              const cronJson = (await cronRes.json()) as { ok?: boolean; jobs?: unknown[] };
-              if (cronRes.ok && cronJson.ok) {
-                const all = Array.isArray(cronJson.jobs) ? cronJson.jobs : [];
-                setCronJobs(all);
-              }
-            } catch {
-              // ignore
-            }
-
-            try {
-              const agentsJson = (await agentsRes.json()) as { agents?: unknown[] };
-              if (agentsRes.ok) {
-                const all = Array.isArray(agentsJson.agents) ? agentsJson.agents : [];
-                // Team membership for agents is by id convention: <teamId>-<role>
-                const filtered = all.filter((a) => String((a as { id?: unknown }).id ?? "").startsWith(`${teamId}-`));
-                setTeamAgents(
-                  filtered.map((a) => {
-                    const agent = a as { id?: unknown; identityName?: unknown };
-                    return { id: String(agent.id ?? ""), identityName: typeof agent.identityName === "string" ? agent.identityName : undefined };
-                  }),
-                );
-              }
-            } catch {
-              // ignore
-            }
-
-            try {
-              const skillsJson = await skillsRes.json();
-              if (skillsRes.ok && skillsJson.ok) {
-                setSkillsList(Array.isArray(skillsJson.skills) ? (skillsJson.skills as string[]) : []);
-              }
-            } catch {
-              // ignore
-            }
-
-            try {
-              const availableSkillsJson = (await availableSkillsRes.json()) as { ok?: boolean; skills?: unknown[] };
-              if (availableSkillsRes.ok && availableSkillsJson.ok) {
-                const list = Array.isArray(availableSkillsJson.skills) ? (availableSkillsJson.skills as string[]) : [];
-                setAvailableSkills(list);
-                setSelectedSkill((prev) => {
-                  const p = String(prev ?? "").trim();
-                  if (p && list.includes(p)) return p;
-                  return list[0] ?? "";
-                });
-              }
-            } catch {
-              // ignore
-            }
-          } finally {
-            setTeamFilesLoading(false);
-            setCronLoading(false);
-            setTeamAgentsLoading(false);
-            setSkillsLoading(false);
-          }
-        })();
-      } catch (e: unknown) {
+    let cancelled = false;
+    setLoading(true);
+    loadTeamEditorInitial(teamId, {
+      setRecipes,
+      setLockedFromId,
+      setLockedFromName,
+      setProvenanceMissing,
+      setFromId,
+      setTeamMetaRecipeHash,
+      setTeamFiles,
+      setCronJobs,
+      setTeamAgents,
+      setSkillsList,
+      setAvailableSkills,
+      setSelectedSkill,
+      setTeamFilesLoading,
+      setCronLoading,
+      setTeamAgentsLoading,
+      setSkillsLoading,
+    })
+      .then(() => {
+        if (!cancelled) setLoading(false);
+      })
+      .catch((e: unknown) => {
         flashMessage(e instanceof Error ? e.message : String(e), "error");
-      } finally {
-        // If the happy-path already flipped loading=false early, this is a no-op.
-        setLoading(false);
-      }
-    })();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- Initial load only; flashMessage and setters are stable.
   }, [teamId]);
 
   async function onLoadTeamRecipeMarkdown() {
@@ -389,7 +539,7 @@ export default function TeamEditor({ teamId }: { teamId: string }) {
     if (content.trim()) return;
     if (loadingSource) return;
     void onLoadTeamRecipeMarkdown();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- Sync toId to load; onLoadTeamRecipeMarkdown and content are intentionally omitted.
   }, [toId]);
 
   async function ensureCustomRecipeExists(args: { overwrite: boolean; toId?: string; toName?: string; scaffold?: boolean }) {
@@ -610,16 +760,17 @@ export default function TeamEditor({ teamId }: { teamId: string }) {
                   </option>
                 ))}
               </select>
-              {lockedFromId ? (
+              {lockedFromId && (
                 <div className="mt-2 text-xs text-[color:var(--ck-text-tertiary)]">
                   <code>{lockedFromId}</code>
                   {lockedFromName ? ` (${lockedFromName})` : ""}
                 </div>
-              ) : provenanceMissing ? (
+              )}
+              {!lockedFromId && provenanceMissing && (
                 <div className="mt-2 text-xs text-[color:var(--ck-text-tertiary)]">
                   Provenance not found for this team. The parent recipe above is a best-guess.
                 </div>
-              ) : null}
+              )}
 
 
             </div>
@@ -707,110 +858,18 @@ export default function TeamEditor({ teamId }: { teamId: string }) {
               onClick={async () => {
                 setSaving(true);
                 try {
-                  try {
-                    await ensureCustomRecipeExists({ overwrite: false });
-                  } catch (e: unknown) {
-                    // If the custom recipe already exists, proceed; we only needed to ensure a workspace file exists.
-                    // Note: /api/recipes/clone returns 409 in this case.
-                    const msg = e instanceof Error ? e.message : String(e);
-                    if (!/Recipe id already exists:/i.test(msg)) throw e;
-                  }
-                  const res = await fetch("/api/recipes/team-agents", {
-                    method: "POST",
-                    headers: { "content-type": "application/json" },
-                    body: JSON.stringify(
-                      newRole === "__custom__"
-                        ? {
-                            recipeId: toId.trim(),
-                            op: "add",
-                            role: derivedRole,
-                            name: newRoleName,
-                          }
-                        : {
-                            recipeId: toId.trim(),
-                            op: "addLike",
-                            baseRole: derivedRole,
-                            teamId,
-                            name: newRoleName,
-                          },
-                    ),
+                  await handleAddAgentToTeam({
+                    teamId,
+                    toId,
+                    newRole,
+                    derivedRole,
+                    newRoleName,
+                    content,
+                    setContent,
+                    setTeamAgents,
+                    flashMessage,
+                    ensureCustomRecipeExists,
                   });
-                  const json = await res.json();
-                  if (!res.ok || !json.ok) throw new Error(json.error || "Failed updating agents list");
-                  setContent(String(json.content ?? content));
-
-                  // Immediately install/create the new agent by applying config and scaffolding missing files.
-                  // Do not overwrite existing recipe-managed files.
-                  try {
-                    const sync = await fetch("/api/scaffold", {
-                      method: "POST",
-                      headers: { "content-type": "application/json" },
-                      body: JSON.stringify({
-                        kind: "team",
-                        recipeId: toId.trim(),
-                        teamId,
-                        applyConfig: true,
-                        overwrite: false,
-                        allowExisting: true,
-                        cronInstallChoice: "no",
-                      }),
-                    });
-                    const syncJson = await sync.json();
-                    if (!sync.ok) throw new Error(syncJson.error || "Failed to apply config / scaffold team");
-                  } catch (e: unknown) {
-                    // Non-fatal: recipe change is still saved.
-                    flashMessage(e instanceof Error ? e.message : String(e), "error");
-                  }
-
-                  // Poll for new agent to appear; only restart gateway if needed.
-                  const expectedAgentId = typeof (json as { addedAgentId?: unknown }).addedAgentId === "string" ? (json as { addedAgentId?: string }).addedAgentId : "";
-
-                  async function refreshAgentsOnce() {
-                    const agentsRes = await fetch("/api/agents", { cache: "no-store" });
-                    const agentsJson = (await agentsRes.json()) as { agents?: unknown[] };
-                    if (!agentsRes.ok) return { ok: false as const, hasExpected: false as const, agents: [] as Array<{ id: string; identityName?: string }> };
-                    const all = Array.isArray(agentsJson.agents) ? agentsJson.agents : [];
-                    const filtered = all.filter((a) => String((a as { id?: unknown }).id ?? "").startsWith(`${teamId}-`));
-                    const mapped = filtered.map((a) => {
-                      const agent = a as { id?: unknown; identityName?: unknown };
-                      return {
-                        id: String(agent.id ?? ""),
-                        identityName: typeof agent.identityName === "string" ? agent.identityName : undefined,
-                      };
-                    });
-                    const hasExpected = expectedAgentId ? mapped.some((a) => a.id === expectedAgentId) : false;
-                    return { ok: true as const, hasExpected, agents: mapped };
-                  }
-
-                  async function pollAgents(maxMs: number) {
-                    const start = Date.now();
-                    while (Date.now() - start < maxMs) {
-                      try {
-                        const r = await refreshAgentsOnce();
-                        if (r.ok) {
-                          setTeamAgents(r.agents);
-                          if (!expectedAgentId || r.hasExpected) return true;
-                        }
-                      } catch {
-                        // ignore
-                      }
-                      await new Promise((res) => setTimeout(res, 500));
-                    }
-                    return false;
-                  }
-
-                  const appeared = await pollAgents(5000);
-                  if (!appeared && expectedAgentId) {
-                    // Background-ish restart: do it only if needed.
-                    try {
-                      void fetch("/api/gateway/restart", { method: "POST" });
-                    } catch {
-                      // ignore
-                    }
-                    await pollAgents(10000);
-                  }
-
-                  flashMessage(`Updated agents list in ${toId}`, "success");
                 } catch (e: unknown) {
                   flashMessage(e instanceof Error ? e.message : String(e), "error");
                 } finally {
@@ -844,10 +903,12 @@ export default function TeamEditor({ teamId }: { teamId: string }) {
                     </a>
                   </li>
                 ))
-              ) : teamAgentsLoading ? (
-                <li className="text-sm text-[color:var(--ck-text-secondary)]">Loading…</li>
-              ) : (
+              ) : null}
+              {teamAgents.length === 0 && !teamAgentsLoading && (
                 <li className="text-sm text-[color:var(--ck-text-secondary)]">No team agents detected.</li>
+              )}
+              {teamAgents.length === 0 && teamAgentsLoading && (
+                <li className="text-sm text-[color:var(--ck-text-secondary)]">Loading…</li>
               )}
             </ul>
           </div>
@@ -1008,11 +1069,13 @@ export default function TeamEditor({ teamId }: { teamId: string }) {
                   </li>
                 );
               })
-            ) : cronLoading ? (
-              <li className="text-sm text-[color:var(--ck-text-secondary)]">Loading…</li>
-            ) : (
-              <li className="text-sm text-[color:var(--ck-text-secondary)]">No cron jobs detected for this team.</li>
-            )}
+            ) : null}
+              {cronJobs.length === 0 && cronLoading && (
+                <li className="text-sm text-[color:var(--ck-text-secondary)]">Loading…</li>
+              )}
+              {cronJobs.length === 0 && !cronLoading && (
+                <li className="text-sm text-[color:var(--ck-text-secondary)]">No cron jobs detected for this team.</li>
+              )}
           </ul>
         </div>
       ) : null}

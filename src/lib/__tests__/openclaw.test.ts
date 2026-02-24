@@ -79,5 +79,51 @@ describe("openclaw", () => {
       const result = await runOpenClaw(["x"]);
       expect(result.exitCode).toBe(1);
     });
+
+    it("extracts stdout from object with toString when rejected", async () => {
+      const err = new Error("fail") as Error & { code?: number; stdout?: unknown };
+      err.code = 1;
+      err.stdout = { toString: () => "custom-out" };
+
+      mockRunCommand.mockRejectedValue(err);
+
+      const result = await runOpenClaw(["x"]);
+      expect(result.stdout).toBe("custom-out");
+    });
+
+    it("extracts stderr from object with toString when rejected", async () => {
+      const err = new Error("fail") as Error & { code?: number; stderr?: unknown };
+      err.code = 1;
+      err.stderr = { toString: () => "custom-err" };
+
+      mockRunCommand.mockRejectedValue(err);
+
+      const result = await runOpenClaw(["x"]);
+      expect(result.stderr).toBe("custom-err");
+    });
+
+    it("uses code from result when exitCode missing", async () => {
+      mockRunCommand.mockResolvedValue({
+        stdout: "",
+        stderr: "",
+        code: 2,
+      });
+
+      const result = await runOpenClaw(["x"]);
+      expect(result.ok).toBe(false);
+      expect(result.exitCode).toBe(2);
+    });
+
+    it("uses status from result when exitCode and code missing", async () => {
+      mockRunCommand.mockResolvedValue({
+        stdout: "",
+        stderr: "",
+        status: 3,
+      });
+
+      const result = await runOpenClaw(["x"]);
+      expect(result.ok).toBe(false);
+      expect(result.exitCode).toBe(3);
+    });
   });
 });
