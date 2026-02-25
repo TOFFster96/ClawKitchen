@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { GoalFormFields } from "@/components/GoalFormFields";
+import { GoalFormCard, GoalFormFields } from "@/components/GoalFormFields";
 import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
 import { type GoalStatus, parseCommaList } from "@/lib/goals-client";
@@ -58,34 +58,25 @@ export default function NewGoalPage() {
         ← Back
       </Link>
 
-      <div className="ck-glass p-6 space-y-4">
+      <GoalFormCard
+        error={error}
+        actions={
+          <button
+            onClick={() => void create()}
+            disabled={saving}
+            className="rounded-[var(--ck-radius-sm)] bg-[var(--ck-accent-red)] px-3 py-2 text-sm font-medium text-white disabled:opacity-50"
+          >
+            {saving ? "Creating…" : "Create"}
+          </button>
+        }
+      >
         <h1 className="text-xl font-semibold tracking-tight">Create goal</h1>
-
         <GoalFormFields
-          title={title}
-          setTitle={setTitle}
-          status={status}
-          setStatus={setStatus}
-          tagsRaw={tagsRaw}
-          setTagsRaw={setTagsRaw}
-          teamsRaw={teamsRaw}
-          setTeamsRaw={setTeamsRaw}
-          body={body}
-          setBody={setBody}
+          formState={{ title, setTitle, status, setStatus, tagsRaw, setTagsRaw, teamsRaw, setTeamsRaw, body, setBody }}
           idField={{ id, setId, suggestedId: suggestedId || undefined }}
           bodyHeight="h-[260px]"
         />
-
-        {error ? <div className="text-sm text-red-300">{error}</div> : null}
-
-        <button
-          onClick={() => void create()}
-          disabled={saving}
-          className="rounded-[var(--ck-radius-sm)] bg-[var(--ck-accent-red)] px-3 py-2 text-sm font-medium text-white disabled:opacity-50"
-        >
-          {saving ? "Creating…" : "Create"}
-        </button>
-      </div>
+      </GoalFormCard>
     </div>
   );
 }

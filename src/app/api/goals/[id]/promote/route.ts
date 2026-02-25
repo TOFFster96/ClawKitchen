@@ -4,8 +4,7 @@ import path from "node:path";
 import { NextResponse } from "next/server";
 
 import { slugifyFilePart, ensureWorkflowInstructions } from "@/lib/goal-promote";
-import { errorMessage } from "@/lib/errors";
-import { goalErrorStatus, readGoal, writeGoal } from "@/lib/goals";
+import { goalErrorResponse, readGoal, writeGoal } from "@/lib/goals";
 import { getTeamWorkspaceDir, readOpenClawConfig } from "@/lib/paths";
 import { runOpenClaw } from "@/lib/openclaw";
 
@@ -114,8 +113,6 @@ export async function POST(_: Request, { params }: { params: Promise<{ id: strin
       pingReason,
     });
   } catch (e: unknown) {
-    const msg = errorMessage(e);
-    const status = goalErrorStatus(msg);
-    return NextResponse.json({ error: msg }, { status });
+    return goalErrorResponse(e);
   }
 }

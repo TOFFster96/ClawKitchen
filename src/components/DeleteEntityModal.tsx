@@ -1,36 +1,40 @@
 "use client";
 
-import { ConfirmationModal } from "@/components/ConfirmationModal";
+import { ConfirmationModal } from "./ConfirmationModal";
 
-export function DeleteRecipeModal({
+/** Shared delete confirmation modal: title, entity label in code, body text. */
+export function DeleteEntityModal({
   open,
-  recipeId,
   onClose,
+  title,
+  entityLabel,
+  bodyText,
   onConfirm,
   busy,
   error,
 }: {
   open: boolean;
-  recipeId: string;
+  onClose: () => void;
+  title: string;
+  entityLabel: string;
+  bodyText: string;
+  onConfirm: () => void;
   busy?: boolean;
   error?: string | null;
-  onClose: () => void;
-  onConfirm: () => void;
 }) {
   return (
     <ConfirmationModal
       open={open}
       onClose={onClose}
-      title="Delete recipe"
+      title={title}
       confirmLabel="Delete"
       confirmBusyLabel="Deleting…"
       onConfirm={onConfirm}
       busy={busy}
-      error={error}
+      error={error ?? undefined}
     >
       <p className="mt-2 text-sm text-[color:var(--ck-text-secondary)]">
-        Delete recipe <code className="font-mono">{recipeId}</code>? This removes the markdown file from your
-        workspace.
+        {title} <code className="font-mono">{entityLabel}</code>? {bodyText}
       </p>
     </ConfirmationModal>
   );

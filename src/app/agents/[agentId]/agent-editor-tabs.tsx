@@ -1,5 +1,7 @@
 "use client";
 
+import { FileListWithOptionalToggle } from "@/components/FileListWithOptionalToggle";
+
 type FileEntry = { name: string; missing: boolean; required?: boolean; rationale?: string };
 
 export function IdentityTab({
@@ -244,55 +246,27 @@ export function FilesTab({
 }) {
   return (
     <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
-      <div className="ck-glass-strong p-4">
-        <div className="flex items-center justify-between gap-3">
-          <div className="text-sm font-medium text-[color:var(--ck-text-primary)]">Agent files</div>
-          <label className="flex items-center gap-2 text-xs text-[color:var(--ck-text-secondary)]">
-            <input type="checkbox" checked={showOptionalFiles} onChange={(e) => onShowOptionalChange(e.target.checked)} />
-            Show optional
-          </label>
-        </div>
-        <div className="mt-2 text-xs text-[color:var(--ck-text-tertiary)]">Default view hides optional missing files to reduce noise.</div>
-        <ul className="mt-3 space-y-1">
-          {agentFilesLoading ? (
-            <li className="text-sm text-[color:var(--ck-text-secondary)]">Loading…</li>
-          ) : null}
-          {agentFiles
-            .filter((f) => (showOptionalFiles ? true : Boolean(f.required) || !f.missing))
-            .map((f) => (
-              <li key={f.name}>
-                <div className="flex items-center gap-2">
-                  <button
-                    onClick={() => onLoadFile(f.name)}
-                    className={
-                      fileName === f.name
-                        ? "w-full rounded-[var(--ck-radius-sm)] bg-white/10 px-3 py-2 text-left text-sm text-[color:var(--ck-text-primary)]"
-                        : "w-full rounded-[var(--ck-radius-sm)] px-3 py-2 text-left text-sm text-[color:var(--ck-text-secondary)] hover:bg-white/5"
-                    }
-                  >
-                    <span className={f.required ? "text-[color:var(--ck-text-primary)]" : "text-[color:var(--ck-text-secondary)]"}>
-                      {f.name}
-                    </span>
-                    <span className="ml-2 text-[10px] uppercase tracking-wide text-[color:var(--ck-text-tertiary)]">
-                      {f.required ? "required" : "optional"}
-                    </span>
-                    {f.missing ? <span className="ml-2 text-xs text-[color:var(--ck-text-tertiary)]">missing</span> : null}
-                  </button>
-                  {f.missing ? (
-                    <button
-                      type="button"
-                      disabled={saving}
-                      onClick={() => void onCreateMissingFile(f.name)}
-                      className="shrink-0 rounded-[var(--ck-radius-sm)] border border-white/10 bg-white/5 px-2 py-1 text-xs font-medium text-[color:var(--ck-text-primary)] hover:bg-white/10 disabled:opacity-50"
-                    >
-                      Create
-                    </button>
-                  ) : null}
-                </div>
-              </li>
-            ))}
-        </ul>
-      </div>
+      <FileListWithOptionalToggle
+        title="Agent files"
+        files={agentFiles}
+        loading={agentFilesLoading}
+        showOptionalFiles={showOptionalFiles}
+        onShowOptionalChange={onShowOptionalChange}
+        selectedFileName={fileName}
+        onSelectFile={onLoadFile}
+        renderItemExtra={(f) =>
+          f.missing ? (
+            <button
+              type="button"
+              disabled={saving}
+              onClick={() => void onCreateMissingFile(f.name)}
+              className="shrink-0 rounded-[var(--ck-radius-sm)] border border-white/10 bg-white/5 px-2 py-1 text-xs font-medium text-[color:var(--ck-text-primary)] hover:bg-white/10 disabled:opacity-50"
+            >
+              Create
+            </button>
+          ) : null
+        }
+      />
       <div className="ck-glass-strong p-4 lg:col-span-2">
         <div className="flex items-center justify-between gap-3">
           <div className="text-sm font-medium text-[color:var(--ck-text-primary)]">Edit: {fileName}</div>

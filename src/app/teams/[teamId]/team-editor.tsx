@@ -3,8 +3,9 @@
 import { useEffect, useMemo, useState } from "react";
 import { parse as parseYaml } from "yaml";
 import { useRouter } from "next/navigation";
-import { DeleteTeamModal } from "./DeleteTeamModal";
+import { DeleteTeamModal } from "@/components/delete-modals";
 import { PublishChangesModal } from "./PublishChangesModal";
+import { FileListWithOptionalToggle } from "@/components/FileListWithOptionalToggle";
 import { useToast } from "@/components/ToastProvider";
 
 type RecipeListItem = {
@@ -1082,49 +1083,15 @@ export default function TeamEditor({ teamId }: { teamId: string }) {
 
       {activeTab === "files" ? (
         <div className="mt-6 grid grid-cols-1 gap-4 lg:grid-cols-3">
-          <div className="ck-glass-strong p-4">
-            <div className="flex items-center justify-between gap-3">
-              <div className="text-sm font-medium text-[color:var(--ck-text-primary)]">Team files</div>
-              <label className="flex items-center gap-2 text-xs text-[color:var(--ck-text-secondary)]">
-                <input
-                  type="checkbox"
-                  checked={showOptionalFiles}
-                  onChange={(e) => setShowOptionalFiles(e.target.checked)}
-                />
-                Show optional
-              </label>
-            </div>
-            <div className="mt-2 text-xs text-[color:var(--ck-text-tertiary)]">
-              Default view hides optional missing files to reduce noise.
-            </div>
-            <ul className="mt-3 space-y-1">
-              {teamFilesLoading ? (
-                <li className="text-sm text-[color:var(--ck-text-secondary)]">Loading…</li>
-              ) : null}
-              {teamFiles
-                .filter((f) => (showOptionalFiles ? true : f.required || !f.missing))
-                .map((f) => (
-                <li key={f.name}>
-                  <button
-                    onClick={() => onLoadTeamFile(f.name)}
-                    className={
-                      fileName === f.name
-                        ? "w-full rounded-[var(--ck-radius-sm)] bg-white/10 px-3 py-2 text-left text-sm text-[color:var(--ck-text-primary)]"
-                        : "w-full rounded-[var(--ck-radius-sm)] px-3 py-2 text-left text-sm text-[color:var(--ck-text-secondary)] hover:bg-white/5"
-                    }
-                  >
-                    <span className={f.required ? "text-[color:var(--ck-text-primary)]" : "text-[color:var(--ck-text-secondary)]"}>
-                      {f.name}
-                    </span>
-                    <span className="ml-2 text-[10px] uppercase tracking-wide text-[color:var(--ck-text-tertiary)]">
-                      {f.required ? "required" : "optional"}
-                    </span>
-                    {f.missing ? <span className="ml-2 text-xs text-[color:var(--ck-text-tertiary)]">missing</span> : null}
-                  </button>
-                </li>
-              ))}
-            </ul>
-          </div>
+          <FileListWithOptionalToggle
+            title="Team files"
+            files={teamFiles}
+            loading={teamFilesLoading}
+            showOptionalFiles={showOptionalFiles}
+            onShowOptionalChange={setShowOptionalFiles}
+            selectedFileName={fileName}
+            onSelectFile={onLoadTeamFile}
+          />
 
           <div className="ck-glass-strong p-4 lg:col-span-2">
             <div className="flex items-center justify-between gap-3">

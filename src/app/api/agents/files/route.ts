@@ -1,13 +1,10 @@
 import { NextResponse } from "next/server";
-import { resolveAgentWorkspace } from "@/lib/agents";
-import { listWorkspaceFiles } from "@/lib/api-route-helpers";
+import { getAgentContextFromQuery, listWorkspaceFiles } from "@/lib/api-route-helpers";
 
 export async function GET(req: Request) {
-  const { searchParams } = new URL(req.url);
-  const agentId = String(searchParams.get("agentId") ?? "").trim();
-  if (!agentId) return NextResponse.json({ ok: false, error: "agentId is required" }, { status: 400 });
-
-  const ws = await resolveAgentWorkspace(agentId);
+  const ctx = await getAgentContextFromQuery(req);
+  if (ctx instanceof NextResponse) return ctx;
+  const { agentId, ws } = ctx;
 
   const candidates = [
     { name: "SOUL.md", required: true, rationale: "Agent persona/instructions" },

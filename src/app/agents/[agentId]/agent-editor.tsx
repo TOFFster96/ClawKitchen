@@ -2,7 +2,8 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { ConfirmationModal } from "@/components/ConfirmationModal";
+import { errorMessage } from "@/lib/errors";
+import { DeleteAgentModal } from "@/components/delete-modals";
 import { IdentityTab, ConfigTab, SkillsTab, FilesTab } from "./agent-editor-tabs";
 
 type AgentListItem = {
@@ -86,39 +87,6 @@ async function loadAgentFilesAndSkills(
   }
 }
 
-function DeleteAgentModal({
-  open,
-  agentId,
-  busy,
-  error,
-  onClose,
-  onConfirm,
-}: {
-  open: boolean;
-  agentId: string;
-  busy?: boolean;
-  error?: string | null;
-  onClose: () => void;
-  onConfirm: () => void;
-}) {
-  return (
-    <ConfirmationModal
-      open={open}
-      onClose={onClose}
-      title="Delete agent"
-      error={error ?? undefined}
-      confirmLabel="Delete"
-      confirmBusyLabel="Deleting…"
-      onConfirm={onConfirm}
-      busy={busy}
-    >
-      <p className="mt-2 text-sm text-[color:var(--ck-text-secondary)]">
-        Delete agent <code className="font-mono">{agentId}</code>? This will remove its workspace/state.
-      </p>
-    </ConfirmationModal>
-  );
-}
-
 export default function AgentEditor({ agentId, returnTo }: { agentId: string; returnTo?: string }) {
   const router = useRouter();
   const [agent, setAgent] = useState<AgentListItem | null>(null);
@@ -189,10 +157,23 @@ export default function AgentEditor({ agentId, returnTo }: { agentId: string; re
     })();
   }, [agentId]);
 
-  async function onSaveIdentity() {
+  async function withSaveFeedback(
+    fn: () => Promise<string>,
+  ) {
     setSaving(true);
     setPageMsg("");
     try {
+      const msg = await fn();
+      setPageMsg(msg);
+    } catch (e: unknown) {
+      setPageMsg(errorMessage(e));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function onSaveIdentity() {
+    await withSaveFeedback(async () => {
       const res = await fetch("/api/agents/identity", {
         method: "POST",
         headers: { "content-type": "application/json" },
@@ -200,19 +181,12 @@ export default function AgentEditor({ agentId, returnTo }: { agentId: string; re
       });
       const json = (await res.json()) as { message?: string; error?: string };
       if (!res.ok) throw new Error(json.message || json.error || "Save failed");
-      setPageMsg("Saved identity via openclaw agents set-identity");
-    } catch (e: unknown) {
-      setPageMsg(e instanceof Error ? e.message : String(e));
-    } finally {
-      setSaving(false);
-    }
+      return "Saved identity via openclaw agents set-identity";
+    });
   }
 
   async function onSaveConfig() {
-    setSaving(true);
-    setPageMsg("");
-
-    try {
+    await withSaveFeedback(async () => {
       const res = await fetch("/api/agents/update", {
         method: "POST",
         headers: { "content-type": "application/json" },
@@ -220,12 +194,8 @@ export default function AgentEditor({ agentId, returnTo }: { agentId: string; re
       });
       const json = (await res.json()) as { error?: string };
       if (!res.ok) throw new Error(json.error || "Save config failed");
-      setPageMsg("Saved agent config (model) and restarted gateway");
-    } catch (e: unknown) {
-      setPageMsg(e instanceof Error ? e.message : String(e));
-    } finally {
-      setSaving(false);
-    }
+      return "Saved agent config (model) and restarted gateway";
+    });
   }
 
   async function onLoadAgentFile(nextName: string) {

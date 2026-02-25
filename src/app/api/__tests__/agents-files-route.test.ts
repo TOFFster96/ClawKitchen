@@ -44,7 +44,7 @@ describe("api agents files route", () => {
     expect(json.files.some((f: { name: string }) => f.name === "IDENTITY.md")).toBe(true);
   });
 
-  it("throws when agent workspace not found", async () => {
+  it("returns 404 when agent workspace not found", async () => {
     vi.mocked(runOpenClaw).mockResolvedValue({
       ok: true,
       exitCode: 0,
@@ -52,8 +52,10 @@ describe("api agents files route", () => {
       stderr: "",
     });
 
-    await expect(
-      GET(new Request("https://test/api/agents/files?agentId=missing"))
-    ).rejects.toThrow("Agent workspace not found");
+    const res = await GET(new Request("https://test/api/agents/files?agentId=missing"));
+    expect(res.status).toBe(404);
+    const json = await res.json();
+    expect(json.ok).toBe(false);
+    expect(json.error).toContain("workspace not found");
   });
 });

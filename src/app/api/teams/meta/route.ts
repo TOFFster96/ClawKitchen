@@ -1,21 +1,20 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { NextResponse } from "next/server";
-import { getTeamContextFromBody, getTeamContextFromQuery } from "@/lib/api-route-helpers";
+import { getTeamContextFromBody, withTeamContextFromQuery } from "@/lib/api-route-helpers";
 
 export async function GET(req: Request) {
-  const ctx = await getTeamContextFromQuery(req);
-  if (ctx instanceof NextResponse) return ctx;
-  const { teamId, teamDir } = ctx;
-  const metaPath = path.join(teamDir, "team.json");
+  return withTeamContextFromQuery(req, async ({ teamId, teamDir }) => {
+    const metaPath = path.join(teamDir, "team.json");
 
-  try {
-    const raw = await fs.readFile(metaPath, "utf8");
-    const meta = JSON.parse(raw) as Record<string, unknown>;
-    return NextResponse.json({ ok: true, teamId, teamDir, metaPath, meta });
-  } catch {
-    return NextResponse.json({ ok: true, teamId, teamDir, metaPath, meta: null, missing: true });
-  }
+    try {
+      const raw = await fs.readFile(metaPath, "utf8");
+      const meta = JSON.parse(raw) as Record<string, unknown>;
+      return NextResponse.json({ ok: true, teamId, teamDir, metaPath, meta });
+    } catch {
+      return NextResponse.json({ ok: true, teamId, teamDir, metaPath, meta: null, missing: true });
+    }
+  });
 }
 
 export async function POST(req: Request) {

@@ -1,6 +1,5 @@
 import { NextResponse } from "next/server";
-import { errorMessage } from "@/lib/errors";
-import { deleteGoal, goalErrorStatus, readGoal, writeGoal } from "@/lib/goals";
+import { deleteGoal, goalErrorResponse, readGoal, writeGoal } from "@/lib/goals";
 
 export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -9,9 +8,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
     if (!goal) return NextResponse.json({ error: "Not found" }, { status: 404 });
     return NextResponse.json({ goal: goal.frontmatter, body: goal.body, raw: goal.raw });
   } catch (e: unknown) {
-    const msg = errorMessage(e);
-    const status = goalErrorStatus(msg);
-    return NextResponse.json({ error: msg }, { status });
+    return goalErrorResponse(e);
   }
 }
 
@@ -41,9 +38,7 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
 
     return NextResponse.json({ goal: result.frontmatter });
   } catch (e: unknown) {
-    const msg = errorMessage(e);
-    const status = goalErrorStatus(msg);
-    return NextResponse.json({ error: msg }, { status });
+    return goalErrorResponse(e);
   }
 }
 
@@ -54,8 +49,6 @@ export async function DELETE(_req: Request, { params }: { params: Promise<{ id: 
     if (!result.ok) return NextResponse.json({ error: "Not found" }, { status: 404 });
     return NextResponse.json({ ok: true });
   } catch (e: unknown) {
-    const msg = errorMessage(e);
-    const status = goalErrorStatus(msg);
-    return NextResponse.json({ error: msg }, { status });
+    return goalErrorResponse(e);
   }
 }

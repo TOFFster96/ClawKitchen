@@ -1,11 +1,31 @@
 "use client";
 
+import type { ReactNode } from "react";
 import type { GoalStatus } from "@/lib/goals-client";
+
+/** Wraps goal form content with error display and action buttons. */
+export function GoalFormCard({
+  children,
+  error,
+  actions,
+}: {
+  children: ReactNode;
+  error: string | null;
+  actions: ReactNode;
+}) {
+  return (
+    <div className="ck-glass p-6 space-y-4">
+      {children}
+      {error ? <div className="text-sm text-red-300">{error}</div> : null}
+      {actions}
+    </div>
+  );
+}
 
 const inputClass =
   "mt-1 w-full rounded-[var(--ck-radius-sm)] border border-[color:var(--ck-border-subtle)] bg-transparent px-3 py-2 text-sm";
 
-type Props = {
+export type GoalFormState = {
   title: string;
   setTitle: (v: string) => void;
   status: GoalStatus;
@@ -16,6 +36,10 @@ type Props = {
   setTeamsRaw: (v: string) => void;
   body: string;
   setBody: (v: string) => void;
+};
+
+type Props = {
+  formState: GoalFormState;
   /** When provided, renders the ID field (for create flow). */
   idField?: { id: string; setId: (v: string) => void; suggestedId?: string };
   /** When provided, shows updated timestamp next to body label. */
@@ -25,20 +49,12 @@ type Props = {
 };
 
 export function GoalFormFields({
-  title,
-  setTitle,
-  status,
-  setStatus,
-  tagsRaw,
-  setTagsRaw,
-  teamsRaw,
-  setTeamsRaw,
-  body,
-  setBody,
+  formState,
   idField,
   updatedAt,
   bodyHeight = "h-[320px]",
 }: Props) {
+  const { title, setTitle, status, setStatus, tagsRaw, setTagsRaw, teamsRaw, setTeamsRaw, body, setBody } = formState;
   return (
     <>
       {idField ? (

@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useToast } from "@/components/ToastProvider";
-import { DeleteCronJobModal } from "./DeleteCronJobModal";
+import { DeleteCronJobModal } from "@/components/delete-modals";
 
 type CronJob = {
   id: string;

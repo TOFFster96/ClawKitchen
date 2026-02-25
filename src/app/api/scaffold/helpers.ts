@@ -121,59 +121,80 @@ async function getRecipeName(recipeId: string): Promise<string | undefined> {
   }
 }
 
-export async function persistTeamProvenance(
-  teamId: string,
-  recipeId: string,
-  recipeHash: string | null
-): Promise<void> {
+async function persistProvenance(opts: {
+  id: string;
+  idKey: "teamId" | "agentId";
+  recipeId: string;
+  recipeHash: string | null;
+  dirResolver: (baseWorkspace: string) => string;
+  metaFileName: string;
+}): Promise<void> {
   try {
     const cfg = await readOpenClawConfig();
     const baseWorkspace = String(cfg.agents?.defaults?.workspace ?? "").trim();
     if (!baseWorkspace) return;
 
-    const teamDir = teamDirFromTeamId(baseWorkspace, teamId);
-    const recipeName = await getRecipeName(recipeId);
+    const dir = opts.dirResolver(baseWorkspace);
+    const recipeName = await getRecipeName(opts.recipeId);
     const now = new Date().toISOString();
     const meta = {
-      teamId,
-      recipeId,
+      [opts.idKey]: opts.id,
+      recipeId: opts.recipeId,
       ...(recipeName ? { recipeName } : {}),
-      ...(recipeHash ? { recipeHash } : {}),
+      ...(opts.recipeHash ? { recipeHash: opts.recipeHash } : {}),
       scaffoldedAt: now,
       attachedAt: now,
     };
 
-    await fs.mkdir(teamDir, { recursive: true });
-    await fs.writeFile(path.join(teamDir, TEAM_META_FILE), JSON.stringify(meta, null, 2) + "\n", "utf8");
-
-    // Best-effort: ensure team.teamId matches in generated recipe
-    try {
-      const recipesDir = await getWorkspaceRecipesDir();
-      const recipePath = path.join(recipesDir, `${teamId}.md`);
-      const md = await fs.readFile(recipePath, "utf8");
-      if (md.startsWith("---\n")) {
-        const end = md.indexOf("\n---\n", 4);
-        if (end !== -1) {
-          const yamlText = md.slice(4, end + 1);
-          const rest = md.slice(end + 5);
-          const fm = (YAML.parse(yamlText) ?? {}) as Record<string, unknown>;
-          const nextFm: Record<string, unknown> = {
-            ...fm,
-            team: {
-              ...(typeof fm.team === "object" && fm.team ? (fm.team as Record<string, unknown>) : {}),
-              teamId,
-            },
-          };
-          const nextYaml = YAML.stringify(nextFm).trimEnd();
-          const nextMd = `---\n${nextYaml}\n---\n${rest}`;
-          if (nextMd !== md) await fs.writeFile(recipePath, nextMd, "utf8");
-        }
-      }
-    } catch {
-      // ignore
-    }
+    await fs.mkdir(dir, { recursive: true });
+    await fs.writeFile(path.join(dir, opts.metaFileName), JSON.stringify(meta, null, 2) + "\n", "utf8");
   } catch {
     // best-effort only
+  }
+}
+
+export async function persistTeamProvenance(
+  teamId: string,
+  recipeId: string,
+  recipeHash: string | null
+): Promise<void> {
+  await persistProvenance({
+    id: teamId,
+    idKey: "teamId",
+    recipeId,
+    recipeHash,
+    dirResolver: (base) => teamDirFromTeamId(base, teamId),
+    metaFileName: TEAM_META_FILE,
+  });
+
+  // Best-effort: ensure team.teamId matches in generated recipe
+  try {
+    const cfg = await readOpenClawConfig();
+    const baseWorkspace = String(cfg.agents?.defaults?.workspace ?? "").trim();
+    if (!baseWorkspace) return;
+    const recipesDir = await getWorkspaceRecipesDir();
+    const recipePath = path.join(recipesDir, `${teamId}.md`);
+    const md = await fs.readFile(recipePath, "utf8");
+    if (md.startsWith("---\n")) {
+      const end = md.indexOf("\n---\n", 4);
+      if (end !== -1) {
+        const yamlText = md.slice(4, end + 1);
+        const rest = md.slice(end + 5);
+        const fm = (YAML.parse(yamlText) ?? {}) as Record<string, unknown>;
+        const nextFm: Record<string, unknown> = {
+          ...fm,
+          team: {
+            ...(typeof fm.team === "object" && fm.team ? (fm.team as Record<string, unknown>) : {}),
+            teamId,
+          },
+        };
+        const nextYaml = YAML.stringify(nextFm).trimEnd();
+        const nextMd = `---\n${nextYaml}\n---\n${rest}`;
+        if (nextMd !== md) await fs.writeFile(recipePath, nextMd, "utf8");
+      }
+    }
+  } catch {
+    // ignore
   }
 }
 
@@ -182,26 +203,12 @@ export async function persistAgentProvenance(
   recipeId: string,
   recipeHash: string | null
 ): Promise<void> {
-  try {
-    const cfg = await readOpenClawConfig();
-    const baseWorkspace = String(cfg.agents?.defaults?.workspace ?? "").trim();
-    if (!baseWorkspace) return;
-
-    const agentDir = path.resolve(baseWorkspace, "agents", agentId);
-    const recipeName = await getRecipeName(recipeId);
-    const now = new Date().toISOString();
-    const meta = {
-      agentId,
-      recipeId,
-      ...(recipeName ? { recipeName } : {}),
-      ...(recipeHash ? { recipeHash } : {}),
-      scaffoldedAt: now,
-      attachedAt: now,
-    };
-
-    await fs.mkdir(agentDir, { recursive: true });
-    await fs.writeFile(path.join(agentDir, AGENT_META_FILE), JSON.stringify(meta, null, 2) + "\n", "utf8");
-  } catch {
-    // best-effort only
-  }
+  await persistProvenance({
+    id: agentId,
+    idKey: "agentId",
+    recipeId,
+    recipeHash,
+    dirResolver: (base) => path.resolve(base, "agents", agentId),
+    metaFileName: AGENT_META_FILE,
+  });
 }

@@ -1,22 +1,9 @@
 import YAML from "yaml";
 import { NextResponse } from "next/server";
 import { runOpenClaw } from "@/lib/openclaw";
+import { splitRecipeFrontmatter, normalizeRole } from "@/lib/recipe-team-agents";
 
-export function splitFrontmatter(md: string) {
-  if (!md.startsWith("---\n")) throw new Error("Recipe markdown must start with YAML frontmatter (---)");
-  const end = md.indexOf("\n---\n", 4);
-  if (end === -1) throw new Error("Recipe frontmatter not terminated (---)");
-  const yamlText = md.slice(4, end + 1);
-  const rest = md.slice(end + 5);
-  return { yamlText, rest };
-}
-
-export function normalizeRole(role: string) {
-  const r = role.trim();
-  if (!r) throw new Error("role is required");
-  if (!/^[a-z][a-z0-9-]{0,62}$/i.test(r)) throw new Error("role must be alphanumeric/dash");
-  return r;
-}
+export { splitRecipeFrontmatter as splitFrontmatter, normalizeRole };
 
 export function parseRecipeFrontmatter(yamlText: string) {
   const fm = (YAML.parse(yamlText) ?? {}) as Record<string, unknown>;

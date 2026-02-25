@@ -4,11 +4,12 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { ScaffoldOverlay, type ScaffoldOverlayStep } from "@/components/ScaffoldOverlay";
+import { pollUntil } from "@/lib/poll";
 import { fetchScaffold } from "@/lib/scaffold-client";
 import { useToast } from "@/components/ToastProvider";
 import { CreateTeamModal } from "./CreateTeamModal";
 import { CreateAgentModal } from "./CreateAgentModal";
-import { DeleteRecipeModal } from "./DeleteRecipeModal";
+import { DeleteRecipeModal } from "@/components/delete-modals";
 
 type Recipe = {
   id: string;
@@ -202,48 +203,45 @@ export default function RecipesClient({
 
   async function waitForKitchenHealthy(opts?: { timeoutMs?: number }) {
     const timeoutMs = opts?.timeoutMs ?? 30_000;
-    const started = Date.now();
-
-    while (Date.now() - started < timeoutMs) {
-      try {
-        const res = await fetch("/healthz", { cache: "no-store" });
-        if (res.ok) return true;
-      } catch {
-        // ignore
-      }
-      await new Promise((r) => setTimeout(r, 500));
-    }
-
-    return false;
+    const result = await pollUntil<boolean>(
+      async () => {
+        try {
+          const res = await fetch("/healthz", { cache: "no-store" });
+          return res.ok ? true : null;
+        } catch {
+          return null;
+        }
+      },
+      { timeoutMs }
+    );
+    return result ?? false;
   }
 
   async function waitForTeamPageReady(teamId: string, opts?: { timeoutMs?: number }) {
     const timeoutMs = opts?.timeoutMs ?? 30_000;
-    const started = Date.now();
+    const result = await pollUntil<boolean>(
+      async () => {
+        try {
+          const [recipesRes, metaRes] = await Promise.all([
+            fetch("/api/recipes", { cache: "no-store" }),
+            fetch(`/api/teams/meta?teamId=${encodeURIComponent(teamId)}`, { cache: "no-store" }),
+          ]);
 
-    while (Date.now() - started < timeoutMs) {
-      try {
-        const [recipesRes, metaRes] = await Promise.all([
-          fetch("/api/recipes", { cache: "no-store" }),
-          fetch(`/api/teams/meta?teamId=${encodeURIComponent(teamId)}`, { cache: "no-store" }),
-        ]);
+          const recipesJson = (await recipesRes.json()) as { recipes?: Array<{ id?: unknown; kind?: unknown }> };
+          const list = Array.isArray(recipesJson.recipes) ? recipesJson.recipes : [];
+          const hasRecipe = list.some((r) => String(r.id ?? "") === teamId && String(r.kind ?? "") === "team");
 
-        const recipesJson = (await recipesRes.json()) as { recipes?: Array<{ id?: unknown; kind?: unknown }> };
-        const list = Array.isArray(recipesJson.recipes) ? recipesJson.recipes : [];
-        const hasRecipe = list.some((r) => String(r.id ?? "") === teamId && String(r.kind ?? "") === "team");
+          const metaJson = (await metaRes.json()) as { ok?: boolean; missing?: boolean };
+          const hasMeta = Boolean(metaRes.ok && metaJson.ok && !metaJson.missing);
 
-        const metaJson = (await metaRes.json()) as { ok?: boolean; missing?: boolean };
-        const hasMeta = Boolean(metaRes.ok && metaJson.ok && !metaJson.missing);
-
-        if (hasRecipe && hasMeta) return true;
-      } catch {
-        // ignore
-      }
-
-      await new Promise((r) => setTimeout(r, 500));
-    }
-
-    return false;
+          return hasRecipe && hasMeta ? true : null;
+        } catch {
+          return null;
+        }
+      },
+      { timeoutMs }
+    );
+    return result ?? false;
   }
 
   function validateTeamIdForCreate(recipe: { id: string } | null, teamId: string): string | null {
@@ -252,6 +250,104 @@ export default function RecipesClient({
     if (!t) return "Team id is required.";
     if (t === recipe.id) return `Team id cannot be the same as the recipe id (${recipe.id}). Choose a new team id.`;
     return null;
+  }
+
+  // eslint-disable-next-line sonarjs/cognitive-complexity -- Shared scaffold flow; splitting further would obscure control flow
+  async function scaffoldWithOverlay(opts: {
+    kind: "team" | "agent";
+    recipeId: string;
+    teamId?: string;
+    agentId?: string;
+    name?: string;
+    cronInstallChoice?: "yes" | "no";
+    setBusy: (v: boolean) => void;
+    setError: (v: string | null) => void;
+    setModalOpen: (v: boolean) => void;
+    setOverlayOpen: (v: boolean) => void;
+    setOverlayStep: React.Dispatch<React.SetStateAction<ScaffoldOverlayStep>>;
+    successMessage: string;
+    navigateTo: string;
+    waitBeforeNavigate?: () => Promise<unknown>;
+  }) {
+    const {
+      kind,
+      recipeId,
+      teamId,
+      agentId,
+      name,
+      cronInstallChoice,
+      setBusy,
+      setError,
+      setModalOpen,
+      setOverlayOpen,
+      setOverlayStep,
+      successMessage,
+      navigateTo,
+      waitBeforeNavigate,
+    } = opts;
+
+    setBusy(true);
+    setError(null);
+    setModalOpen(false);
+    setOverlayOpen(true);
+    setOverlayStep(1);
+
+    let serveTimer: ReturnType<typeof setTimeout> | null = null;
+
+    try {
+      const body =
+        kind === "team"
+          ? { kind: "team" as const, recipeId, teamId: teamId!, cronInstallChoice }
+          : { kind: "agent" as const, recipeId, agentId: agentId!, name };
+      const { res, json } = await fetchScaffold(body);
+      if (!res.ok || !(json as { ok?: boolean }).ok)
+        throw new Error(
+          String((json as { error?: string }).error || (kind === "team" ? "Create team failed" : "Create agent failed"))
+        );
+
+      setOverlayStep(2);
+
+      serveTimer = setTimeout(() => {
+        setOverlayStep((prev) => (prev < 3 ? 3 : prev));
+      }, 20_000);
+
+      const stderr = typeof (json as { stderr?: unknown }).stderr === "string" ? (json as { stderr: string }).stderr : "";
+
+      if (/Failed to start CLI:/i.test(stderr) || /\bError: /i.test(stderr)) {
+        throw new Error(stderr.trim() || "Scaffold failed");
+      }
+
+      if (/Restart required:/i.test(stderr)) {
+        setOverlayStep(3);
+        try {
+          await fetch("/api/gateway/restart", { method: "POST" });
+        } catch {
+          // best-effort
+        }
+        await waitForKitchenHealthy({ timeoutMs: 60_000 });
+      }
+
+      if (waitBeforeNavigate) {
+        await waitBeforeNavigate();
+      }
+
+      if (serveTimer) clearTimeout(serveTimer);
+
+      toast.push({ kind: "success", message: successMessage });
+      setModalOpen(false);
+
+      router.push(navigateTo);
+
+      setTimeout(() => setOverlayOpen(false), 500);
+    } catch (e: unknown) {
+      if (serveTimer) clearTimeout(serveTimer);
+      setOverlayOpen(false);
+      const msg = e instanceof Error ? e.message : String(e);
+      setError(msg);
+      toast.push({ kind: "error", message: msg });
+    } finally {
+      setBusy(false);
+    }
   }
 
   async function confirmCreateTeam() {
@@ -264,77 +360,20 @@ export default function RecipesClient({
     if (!recipe) return;
 
     const t = createTeamId.trim();
-    setCreateBusy(true);
-    setCreateError(null);
-
-    // Hide the modal immediately so the overlay is the only visible UI during scaffold.
-    setCreateOpen(false);
-
-    setOverlayOpen(true);
-    setOverlayStep(1);
-
-    let serveTimer: ReturnType<typeof setTimeout> | null = null;
-
-    try {
-      const { res, json } = await fetchScaffold({
-        kind: "team",
-        recipeId: recipe.id,
-        teamId: t,
-        cronInstallChoice: installCron ? "yes" : "no",
-      });
-      if (!res.ok || !(json as { ok?: boolean }).ok) throw new Error(String((json as { error?: string }).error || "Create team failed"));
-
-      setOverlayStep(2);
-
-      // If scaffolding takes a while, switch copy to "Serving..." so users know we're in the
-      // apply/restart phase even if the CLI didn't print the restart hint yet.
-      serveTimer = setTimeout(() => {
-        setOverlayStep((prev) => (prev < 3 ? 3 : prev));
-      }, 20_000);
-
-      const stderr = typeof (json as { stderr?: unknown }).stderr === "string" ? (json as { stderr: string }).stderr : "";
-
-      // Some CLI failures currently still surface as { ok: true, stderr: "...Error: ..." }.
-      // Treat those as hard failures so we don't navigate into a broken team page.
-      if (/Failed to start CLI:/i.test(stderr) || /\bError: /i.test(stderr)) {
-        throw new Error(stderr.trim() || "Scaffold failed");
-      }
-
-      // If scaffolding changed config, the gateway may need a restart. During restart, new pages
-      // will throw transient errors (RSC/markdown fetches/etc.), so keep the overlay up.
-      if (/Restart required:/i.test(stderr)) {
-        setOverlayStep(3);
-        try {
-          await fetch("/api/gateway/restart", { method: "POST" });
-        } catch {
-          // best-effort
-        }
-        await waitForKitchenHealthy({ timeoutMs: 60_000 });
-      }
-
-      // Also wait until the new team's recipe+provenance exist before navigating.
-      // This avoids the destination page throwing "raw markdown" load errors.
-      await waitForTeamPageReady(t, { timeoutMs: 60_000 });
-
-      if (serveTimer) clearTimeout(serveTimer);
-
-      toast.push({ kind: "success", message: `Created team: ${t}` });
-      setCreateOpen(false);
-
-      // Navigate only after restart/readiness to avoid the ugly error+reload UX.
-      router.push(`/teams/${encodeURIComponent(t)}`);
-
-      // Give the next page a beat to mount before removing the overlay.
-      setTimeout(() => setOverlayOpen(false), 500);
-    } catch (e: unknown) {
-      if (serveTimer) clearTimeout(serveTimer);
-      setOverlayOpen(false);
-      const msg = e instanceof Error ? e.message : String(e);
-      setCreateError(msg);
-      toast.push({ kind: "error", message: msg });
-    } finally {
-      setCreateBusy(false);
-    }
+    await scaffoldWithOverlay({
+      kind: "team",
+      recipeId: recipe.id,
+      teamId: t,
+      cronInstallChoice: installCron ? "yes" : "no",
+      setBusy: setCreateBusy,
+      setError: setCreateError,
+      setModalOpen: setCreateOpen,
+      setOverlayOpen,
+      setOverlayStep,
+      successMessage: `Created team: ${t}`,
+      navigateTo: `/teams/${encodeURIComponent(t)}`,
+      waitBeforeNavigate: () => waitForTeamPageReady(t, { timeoutMs: 60_000 }),
+    });
   }
 
   async function confirmCreateAgent() {
@@ -351,63 +390,19 @@ export default function RecipesClient({
       return;
     }
 
-    setCreateAgentBusy(true);
-    setCreateAgentError(null);
-
-    setCreateAgentOpen(false);
-
-    setOverlayOpen(true);
-    setOverlayStep(1);
-
-    let serveTimer: ReturnType<typeof setTimeout> | null = null;
-
-    try {
-      const { res, json } = await fetchScaffold({
-        kind: "agent",
-        recipeId: recipe.id,
-        agentId: a,
-        name: createAgentName.trim() || undefined,
-      });
-      if (!res.ok || !(json as { ok?: boolean }).ok) throw new Error(String((json as { error?: string }).error || "Create agent failed"));
-
-      setOverlayStep(2);
-
-      serveTimer = setTimeout(() => {
-        setOverlayStep((prev) => (prev < 3 ? 3 : prev));
-      }, 20_000);
-
-      const stderr = typeof (json as { stderr?: unknown }).stderr === "string" ? (json as { stderr: string }).stderr : "";
-
-      if (/Failed to start CLI:/i.test(stderr) || /\bError: /i.test(stderr)) {
-        throw new Error(stderr.trim() || "Scaffold failed");
-      }
-
-      if (/Restart required:/i.test(stderr)) {
-        setOverlayStep(3);
-        try {
-          await fetch("/api/gateway/restart", { method: "POST" });
-        } catch {
-          // best-effort
-        }
-        await waitForKitchenHealthy({ timeoutMs: 60_000 });
-      }
-
-      if (serveTimer) clearTimeout(serveTimer);
-
-      toast.push({ kind: "success", message: `Created agent: ${a}` });
-      setCreateAgentOpen(false);
-
-      router.push(`/agents/${encodeURIComponent(a)}`);
-      setTimeout(() => setOverlayOpen(false), 500);
-    } catch (e: unknown) {
-      if (serveTimer) clearTimeout(serveTimer);
-      setOverlayOpen(false);
-      const msg = e instanceof Error ? e.message : String(e);
-      setCreateAgentError(msg);
-      toast.push({ kind: "error", message: msg });
-    } finally {
-      setCreateAgentBusy(false);
-    }
+    await scaffoldWithOverlay({
+      kind: "agent",
+      recipeId: recipe.id,
+      agentId: a,
+      name: createAgentName.trim() || undefined,
+      setBusy: setCreateAgentBusy,
+      setError: setCreateAgentError,
+      setModalOpen: setCreateAgentOpen,
+      setOverlayOpen,
+      setOverlayStep,
+      successMessage: `Created agent: ${a}`,
+      navigateTo: `/agents/${encodeURIComponent(a)}`,
+    });
   }
 
   return (

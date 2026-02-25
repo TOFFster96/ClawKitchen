@@ -1,14 +1,12 @@
 import { NextResponse } from "next/server";
-import { errorMessage } from "@/lib/errors";
-import { goalErrorStatus, listGoals, writeGoal } from "@/lib/goals";
+import { goalErrorResponse, listGoals, writeGoal } from "@/lib/goals";
 
 export async function GET() {
   try {
     const goals = await listGoals();
     return NextResponse.json({ goals });
   } catch (e: unknown) {
-    const msg = errorMessage(e);
-    return NextResponse.json({ error: msg }, { status: 500 });
+    return goalErrorResponse(e);
   }
 }
 
@@ -41,8 +39,6 @@ export async function POST(req: Request) {
 
     return NextResponse.json({ goal: result.frontmatter });
   } catch (e: unknown) {
-    const msg = errorMessage(e);
-    const status = goalErrorStatus(msg);
-    return NextResponse.json({ error: msg }, { status });
+    return goalErrorResponse(e);
   }
 }

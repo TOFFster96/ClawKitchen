@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { splitRecipeFrontmatter, normalizeRole } from "../recipe-team-agents";
+import { splitRecipeFrontmatter, normalizeRole, validateCreateId } from "../recipe-team-agents";
 
 describe("recipe-team-agents", () => {
   describe("splitRecipeFrontmatter", () => {
@@ -42,6 +42,29 @@ agents: []
 
     it("accepts valid role", () => {
       expect(normalizeRole("qa-lead")).toBe("qa-lead");
+    });
+  });
+
+  describe("validateCreateId", () => {
+    const recipe = { id: "my-recipe" };
+
+    it("returns null when recipe is null", () => {
+      expect(validateCreateId(null, "team-1", "team")).toBeNull();
+    });
+
+    it("returns error when id is empty", () => {
+      expect(validateCreateId(recipe, "", "team")).toBe("Team id is required.");
+      expect(validateCreateId(recipe, "  ", "agent")).toBe("Agent id is required.");
+    });
+
+    it("returns error when id matches recipe id", () => {
+      expect(validateCreateId(recipe, "my-recipe", "team")).toContain("cannot be the same");
+      expect(validateCreateId(recipe, "my-recipe", "agent")).toContain("cannot be the same");
+    });
+
+    it("returns null when valid", () => {
+      expect(validateCreateId(recipe, "team-1", "team")).toBeNull();
+      expect(validateCreateId(recipe, "agent-1", "agent")).toBeNull();
     });
   });
 });

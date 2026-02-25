@@ -1,6 +1,8 @@
 import fs from "node:fs/promises";
 import path from "node:path";
+import { NextResponse } from "next/server";
 import YAML from "yaml";
+import { errorMessage } from "@/lib/errors";
 import { getWorkspaceGoalsDir } from "@/lib/paths";
 
 export type GoalStatus = "planned" | "active" | "done";
@@ -36,6 +38,13 @@ export function assertSafeGoalId(id: string) {
 /** Maps goal-related errors to HTTP status: 400 for validation, 500 for other. */
 export function goalErrorStatus(msg: string): 400 | 500 {
   return /Invalid goal id|Path traversal/.test(msg) ? 400 : 500;
+}
+
+/** Returns NextResponse for goal API errors. Use in catch blocks. */
+export function goalErrorResponse(e: unknown): NextResponse {
+  const msg = errorMessage(e);
+  const status = goalErrorStatus(msg);
+  return NextResponse.json({ error: msg }, { status });
 }
 
 export function splitFrontmatter(md: string): { fm: unknown; body: string } {

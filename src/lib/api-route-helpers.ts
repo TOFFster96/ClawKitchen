@@ -1,6 +1,8 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { NextResponse } from "next/server";
+import { resolveAgentWorkspace } from "@/lib/agents";
+import { errorMessage } from "@/lib/errors";
 import { readOpenClawConfig, teamDirFromBaseWorkspace } from "@/lib/paths";
 
 export type TeamContext = { teamId: string; teamDir: string };
@@ -45,10 +47,35 @@ export async function getTeamContextFromQuery(req: Request): Promise<TeamContext
   return resolveTeamContext(teamId);
 }
 
+/** Runs handler with team context from query; returns error response if context invalid. */
+export async function withTeamContextFromQuery(
+  req: Request,
+  handler: (ctx: TeamContext) => Promise<NextResponse>
+): Promise<NextResponse> {
+  const ctx = await getTeamContextFromQuery(req);
+  if (ctx instanceof NextResponse) return ctx;
+  return handler(ctx);
+}
+
 /** Resolves teamId and teamDir from parsed body. Caller must parse req.json() first. */
 export async function getTeamContextFromBody(body: { teamId?: string }): Promise<TeamContext | NextResponse> {
   const teamId = String(body.teamId ?? "").trim();
   return resolveTeamContext(teamId);
+}
+
+export type AgentContext = { agentId: string; ws: string };
+
+/** Resolves agentId and workspace from URL search params. Returns error response if invalid. */
+export async function getAgentContextFromQuery(req: Request): Promise<AgentContext | NextResponse> {
+  const { searchParams } = new URL(req.url);
+  const agentId = String(searchParams.get("agentId") ?? "").trim();
+  if (!agentId) return NextResponse.json({ ok: false, error: "agentId is required" }, { status: 400 });
+  try {
+    const ws = await resolveAgentWorkspace(agentId);
+    return { agentId, ws };
+  } catch (e: unknown) {
+    return NextResponse.json({ ok: false, error: errorMessage(e) }, { status: 404 });
+  }
 }
 
 export type FileCandidate = { name: string; required: boolean; rationale: string };

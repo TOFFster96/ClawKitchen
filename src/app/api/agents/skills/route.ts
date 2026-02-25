@@ -2,14 +2,12 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { NextResponse } from "next/server";
 import { parseTeamRoleWorkspace } from "@/lib/agent-workspace";
-import { resolveAgentWorkspace } from "@/lib/agents";
+import { getAgentContextFromQuery } from "@/lib/api-route-helpers";
 
 export async function GET(req: Request) {
-  const { searchParams } = new URL(req.url);
-  const agentId = String(searchParams.get("agentId") ?? "").trim();
-  if (!agentId) return NextResponse.json({ ok: false, error: "agentId is required" }, { status: 400 });
-
-  const ws = await resolveAgentWorkspace(agentId);
+  const ctx = await getAgentContextFromQuery(req);
+  if (ctx instanceof NextResponse) return ctx;
+  const { agentId, ws } = ctx;
 
   const info = parseTeamRoleWorkspace(ws);
   const dirs: string[] = [path.join(ws, "skills")];

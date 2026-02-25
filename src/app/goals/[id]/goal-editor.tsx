@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { GoalFormFields } from "@/components/GoalFormFields";
+import { GoalFormCard, GoalFormFields } from "@/components/GoalFormFields";
 import { errorMessage } from "@/lib/errors";
 import { type GoalFrontmatter, type GoalStatus, parseCommaList } from "@/lib/goals-client";
 import { useRouter } from "next/navigation";
@@ -130,23 +130,9 @@ export default function GoalEditor({ goalId }: { goalId: string }) {
         <div className="text-xs text-[color:var(--ck-text-tertiary)] font-mono">{goalId}</div>
       </div>
 
-      <div className="ck-glass p-6 space-y-4">
-        <GoalFormFields
-          title={title}
-          setTitle={setTitle}
-          status={status}
-          setStatus={setStatus}
-          tagsRaw={tagsRaw}
-          setTagsRaw={setTagsRaw}
-          teamsRaw={teamsRaw}
-          setTeamsRaw={setTeamsRaw}
-          body={body}
-          setBody={setBody}
-          updatedAt={updatedAt}
-        />
-
-        {error ? <div className="text-sm text-red-300">{error}</div> : null}
-
+      <GoalFormCard
+        error={error}
+        actions={
         <div className="flex flex-wrap items-center gap-3">
           <button
             onClick={() => void save()}
@@ -177,7 +163,13 @@ export default function GoalEditor({ goalId }: { goalId: string }) {
             Delete
           </button>
         </div>
-      </div>
+        }
+      >
+        <GoalFormFields
+          formState={{ title, setTitle, status, setStatus, tagsRaw, setTagsRaw, teamsRaw, setTeamsRaw, body, setBody }}
+          updatedAt={updatedAt}
+        />
+      </GoalFormCard>
 
       <div className="ck-glass p-6">
         <div className="text-sm font-medium">Preview</div>

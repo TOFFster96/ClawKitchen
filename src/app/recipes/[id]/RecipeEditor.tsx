@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { parse as parseYaml } from "yaml";
+import { validateCreateId } from "@/lib/recipe-team-agents";
 import { fetchScaffold } from "@/lib/scaffold-client";
 
 type Recipe = {
@@ -77,28 +78,10 @@ function parseFrontmatter(raw: string): { fm: TeamRecipeFrontmatter | null; erro
   }
 }
 
-function templateKeyToFileName(key: string): string {
-  // For team templates, keys are like: <role>.soul, <role>.tools
-  const suffix = key.split(".").slice(1).join(".");
+/** Maps template key to file name. For team templates, strip role prefix first (e.g. "role.soul" -> "soul"). */
+function templateKeyToFileName(key: string, stripRolePrefix?: boolean): string {
+  const suffix = stripRolePrefix ? key.split(".").slice(1).join(".") : key;
   switch (suffix) {
-    case "soul":
-      return "SOUL.md";
-    case "agents":
-      return "AGENTS.md";
-    case "tools":
-      return "TOOLS.md";
-    case "identity":
-      return "IDENTITY.md";
-    case "install":
-      return "INSTALL.md";
-    default:
-      return suffix ? `${suffix.toUpperCase()}` : key;
-  }
-}
-
-function agentTemplateKeyToFileName(key: string): string {
-  // For agent recipes, keys are usually direct file identifiers (no role prefix).
-  switch (key) {
     case "soul":
       return "SOUL.md";
     case "agents":
@@ -112,31 +95,55 @@ function agentTemplateKeyToFileName(key: string): string {
     case "status":
       return "STATUS.md";
     default:
-      return key;
+      return suffix ? `${suffix.toUpperCase()}` : key;
   }
 }
 
 function expectedFilesForRole(fm: TeamRecipeFrontmatter | null, role: string | undefined): string[] {
   if (!fm || !role || !fm.templates) return [];
   const keys = Object.keys(fm.templates).filter((k) => k.startsWith(`${role}.`));
-  const files = keys.map(templateKeyToFileName);
+  const files = keys.map((k) => templateKeyToFileName(k, true));
   return [...new Set(files)];
 }
 
-function validateCreateTeamId(recipe: { id: string } | null, teamId: string): string | null {
-  if (!recipe) return null;
-  const t = teamId.trim();
-  if (!t) return "Team id is required.";
-  if (t === recipe.id) return `Team id cannot be the same as the recipe id (${recipe.id}). Choose a new team id.`;
-  return null;
-}
-
-function validateCreateAgentId(recipe: { id: string } | null, agentId: string): string | null {
-  if (!recipe) return null;
-  const a = agentId.trim();
-  if (!a) return "Agent id is required.";
-  if (a === recipe.id) return `Agent id cannot be the same as the recipe id (${recipe.id}). Choose a new agent id.`;
-  return null;
+function RecipePanelCard({
+  title,
+  description,
+  buttonLabel,
+  onButtonClick,
+  error,
+  children,
+}: {
+  title: string;
+  description: ReactNode;
+  buttonLabel: string;
+  onButtonClick: () => void;
+  error?: string;
+  children: ReactNode;
+}) {
+  return (
+    <div className="ck-glass-strong p-4">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <div className="text-sm font-medium text-[color:var(--ck-text-primary)]">{title}</div>
+          <div className="mt-1 text-xs text-[color:var(--ck-text-tertiary)]">{description}</div>
+        </div>
+        <button
+          type="button"
+          onClick={onButtonClick}
+          className="shrink-0 rounded-[var(--ck-radius-sm)] bg-[var(--ck-accent-red)] px-3 py-2 text-sm font-medium text-white shadow-[var(--ck-shadow-1)] transition-colors hover:bg-[var(--ck-accent-red-hover)] active:bg-[var(--ck-accent-red-active)]"
+        >
+          {buttonLabel}
+        </button>
+      </div>
+      {error ? (
+        <div className="mt-4 rounded-[var(--ck-radius-sm)] border border-white/10 bg-black/20 p-3 text-xs text-[color:var(--ck-text-primary)]">
+          Frontmatter parse error: {error}
+        </div>
+      ) : null}
+      {children}
+    </div>
+  );
 }
 
 function TeamRecipePanelContent({
@@ -151,30 +158,20 @@ function TeamRecipePanelContent({
   onOpenCreateTeam: () => void;
 }) {
   return (
-    <div className="ck-glass-strong p-4">
-      <div className="flex items-start justify-between gap-3">
-        <div>
-          <div className="text-sm font-medium text-[color:var(--ck-text-primary)]">Team recipe</div>
-          <div className="mt-1 text-xs text-[color:var(--ck-text-tertiary)]">
-            Create a team from this recipe. Creating a Team runs <code>openclaw recipes scaffold-team</code> with{" "}
-            <code>--apply-config</code>.
-          </div>
-        </div>
-        <button
-          type="button"
-          onClick={onOpenCreateTeam}
-          className="shrink-0 rounded-[var(--ck-radius-sm)] bg-[var(--ck-accent-red)] px-3 py-2 text-sm font-medium text-white shadow-[var(--ck-shadow-1)] transition-colors hover:bg-[var(--ck-accent-red-hover)] active:bg-[var(--ck-accent-red-active)]"
-        >
-          Create Team
-        </button>
-      </div>
-      {fmErr ? (
-        <div className="mt-4 rounded-[var(--ck-radius-sm)] border border-white/10 bg-black/20 p-3 text-xs text-[color:var(--ck-text-primary)]">
-          Frontmatter parse error: {fmErr}
-        </div>
-      ) : null}
+    <RecipePanelCard
+      title="Team recipe"
+      description={
+        <>
+          Create a team from this recipe. Creating a Team runs <code>openclaw recipes scaffold-team</code> with{" "}
+          <code>--apply-config</code>.
+        </>
+      }
+      buttonLabel="Create Team"
+      onButtonClick={onOpenCreateTeam}
+      error={fmErr}
+    >
       <TeamRecipeDetails fm={fm} recipe={recipe} />
-    </div>
+    </RecipePanelCard>
   );
 }
 
@@ -341,28 +338,18 @@ function AgentRecipePanelContent({
   onOpenCreateAgent: () => void;
 }) {
   return (
-    <div className="ck-glass-strong p-4">
-      <div className="flex items-start justify-between gap-3">
-        <div>
-          <div className="text-sm font-medium text-[color:var(--ck-text-primary)]">Agent recipe</div>
-          <div className="mt-1 text-xs text-[color:var(--ck-text-tertiary)]">
-            Create an agent from this recipe. Creating an Agent runs <code>openclaw recipes scaffold</code> with{" "}
-            <code>--apply-config</code>.
-          </div>
-        </div>
-        <button
-          type="button"
-          onClick={onOpenCreateAgent}
-          className="shrink-0 rounded-[var(--ck-radius-sm)] bg-[var(--ck-accent-red)] px-3 py-2 text-sm font-medium text-white shadow-[var(--ck-shadow-1)] transition-colors hover:bg-[var(--ck-accent-red-hover)] active:bg-[var(--ck-accent-red-active)]"
-        >
-          Create Agent
-        </button>
-      </div>
-      {afmErr ? (
-        <div className="mt-4 rounded-[var(--ck-radius-sm)] border border-white/10 bg-black/20 p-3 text-xs text-[color:var(--ck-text-primary)]">
-          Frontmatter parse error: {afmErr}
-        </div>
-      ) : null}
+    <RecipePanelCard
+      title="Agent recipe"
+      description={
+        <>
+          Create an agent from this recipe. Creating an Agent runs <code>openclaw recipes scaffold</code> with{" "}
+          <code>--apply-config</code>.
+        </>
+      }
+      buttonLabel="Create Agent"
+      onButtonClick={onOpenCreateAgent}
+      error={afmErr}
+    >
       <div className="mt-4 space-y-3">
         <details className="rounded-[var(--ck-radius-sm)] border border-white/10 bg-black/15 p-3" open>
           <summary className="cursor-pointer text-sm font-medium text-[color:var(--ck-text-primary)]">Recipe information</summary>
@@ -383,7 +370,7 @@ function AgentRecipePanelContent({
                   <li key={k}>
                     <span className="font-mono text-[11px]">{k}</span>
                     <span className="text-[color:var(--ck-text-tertiary)]"> → </span>
-                    <span className="font-mono text-[11px]">{agentTemplateKeyToFileName(k)}</span>
+                    <span className="font-mono text-[11px]">{templateKeyToFileName(k)}</span>
                   </li>
                 ))}
               </ul>
@@ -393,7 +380,7 @@ function AgentRecipePanelContent({
           </div>
         </details>
       </div>
-    </div>
+    </RecipePanelCard>
   );
 }
 
@@ -494,7 +481,7 @@ export default function RecipeEditor({ recipeId }: { recipeId: string }) {
 
   async function onSubmitCreateTeam() {
     if (!recipe || recipe.kind !== "team") return;
-    const err = validateCreateTeamId(recipe, teamId);
+    const err = validateCreateId(recipe, teamId, "team");
     if (err) {
       setCreateMsg(err);
       return;
@@ -525,7 +512,7 @@ export default function RecipeEditor({ recipeId }: { recipeId: string }) {
 
   async function onSubmitCreateAgent() {
     if (!recipe || recipe.kind !== "agent") return;
-    const err = validateCreateAgentId(recipe, agentId);
+    const err = validateCreateId(recipe, agentId, "agent");
     if (err) {
       setCreateAgentMsg(err);
       return;
