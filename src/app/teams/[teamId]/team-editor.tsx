@@ -1510,8 +1510,8 @@ export default function TeamEditor({ teamId }: { teamId: string }) {
                   </button>
                 </div>
 
-                <div className="h-[calc(100%-3rem)] overflow-hidden">
-                  <div className="h-full w-full overflow-auto p-4">
+                <div className="h-[calc(100%-3rem)] overflow-auto p-4">
+                  <div className="ck-glass-strong p-4 lg:col-span-2">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div className="text-sm font-medium text-[color:var(--ck-text-primary)]">Workflow editor</div>
 
