@@ -9,7 +9,7 @@ import { ToastProvider } from "@/components/ToastProvider";
 function Icon({ children }: { children: React.ReactNode }) {
   return (
     <span
-      className="grid size-5 place-items-center text-[color:var(--ck-text-secondary)]"
+      className="grid size-6 place-items-center text-[color:var(--ck-text-secondary)]"
       aria-hidden
     >
       {children}
@@ -36,8 +36,8 @@ function SideNavLink({
       title={label}
       className={
         active
-          ? "flex items-center gap-3 rounded-[var(--ck-radius-sm)] bg-white/10 px-3 py-2 text-sm font-medium text-[color:var(--ck-text-primary)]"
-          : "flex items-center gap-3 rounded-[var(--ck-radius-sm)] px-3 py-2 text-sm font-medium text-[color:var(--ck-text-secondary)] transition-colors hover:bg-white/5 hover:text-[color:var(--ck-text-primary)]"
+          ? "flex items-center gap-4 rounded-[var(--ck-radius-sm)] bg-white/10 px-4 py-3 text-sm font-medium text-[color:var(--ck-text-primary)]"
+          : "flex items-center gap-4 rounded-[var(--ck-radius-sm)] px-4 py-3 text-sm font-medium text-[color:var(--ck-text-secondary)] transition-colors hover:bg-white/5 hover:text-[color:var(--ck-text-primary)]"
       }
     >
       <span className={collapsed ? "mx-auto" : ""}>{icon}</span>
@@ -81,11 +81,23 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     (async () => {
       try {
-        const res = await fetch("/api/recipes", { cache: "no-store" });
+        const res = await fetch("/api/agents", { cache: "no-store" });
         const json = await res.json();
-        const items = Array.isArray(json.recipes) ? (json.recipes as Array<{ id: string; kind: string }>) : [];
-        const teams = items.filter((r) => r.kind === "team").map((r) => r.id).sort();
-        setTeamIds(teams);
+        const agents = Array.isArray(json.agents)
+          ? (json.agents as Array<{ workspace?: string }> )
+          : [];
+
+        const s = new Set<string>();
+        for (const a of agents) {
+          const ws = String(a.workspace ?? "");
+          const parts = ws.split("/").filter(Boolean);
+          const wsPart = parts.find((p) => p.startsWith("workspace-")) ?? "";
+          if (!wsPart) continue;
+          const teamId = wsPart.slice("workspace-".length);
+          if (teamId && teamId !== "workspace") s.add(teamId);
+        }
+
+        setTeamIds(Array.from(s).sort());
       } catch {
         setTeamIds([]);
       }
