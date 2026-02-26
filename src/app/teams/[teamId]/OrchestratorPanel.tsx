@@ -1,0 +1,169 @@
+"use client";
+
+import { useEffect, useState } from "react";
+
+type OrchestratorState =
+  | {
+      ok: true;
+      teamId: string;
+      present: false;
+      reason?: string;
+    }
+  | {
+      ok: true;
+      teamId: string;
+      present: true;
+      agent: { id: string; identityName?: string; workspace: string };
+      tmuxSessions: Array<{ name: string; attached: boolean; windows?: number; created?: string }>;
+      worktrees: Array<{ path: string; branch?: string; sha?: string }>;
+      activeTasksSummary: null | { path: string; taskCount?: number; rawType?: string };
+      settingsPaths: string[];
+    }
+  | {
+      ok: false;
+      error: string;
+    };
+
+export function OrchestratorPanel({ teamId }: { teamId: string }) {
+  const [loading, setLoading] = useState(true);
+  const [state, setState] = useState<OrchestratorState | null>(null);
+
+  useEffect(() => {
+    (async () => {
+      setLoading(true);
+      try {
+        const res = await fetch(`/api/teams/orchestrator?teamId=${encodeURIComponent(teamId)}`, { cache: "no-store" });
+        const json = (await res.json()) as OrchestratorState;
+        setState(json);
+      } catch (e: unknown) {
+        setState({ ok: false, error: e instanceof Error ? e.message : String(e) });
+      } finally {
+        setLoading(false);
+      }
+    })();
+  }, [teamId]);
+
+  if (loading) {
+    return <div className="mt-6 ck-glass-strong p-4">Loading orchestrator state…</div>;
+  }
+
+  if (!state) {
+    return <div className="mt-6 ck-glass-strong p-4">No orchestrator state available.</div>;
+  }
+
+  if (!state.ok) {
+    return (
+      <div className="mt-6 ck-glass-strong p-4">
+        <div className="text-sm font-medium text-[color:var(--ck-text-primary)]">Orchestrator</div>
+        <div className="mt-3 rounded-[var(--ck-radius-sm)] border border-red-400/30 bg-red-500/10 p-3 text-sm text-red-100">
+          {state.error}
+        </div>
+      </div>
+    );
+  }
+
+  if (!state.present) {
+    return (
+      <div className="mt-6 ck-glass-strong p-4">
+        <div className="text-sm font-medium text-[color:var(--ck-text-primary)]">Orchestrator</div>
+        <p className="mt-2 text-sm text-[color:var(--ck-text-secondary)]">
+          No swarm/orchestrator detected for this team.
+        </p>
+        <div className="mt-3 rounded-[var(--ck-radius-sm)] border border-white/10 bg-black/20 p-3 text-sm text-[color:var(--ck-text-secondary)]">
+          <div className="text-xs font-medium text-[color:var(--ck-text-tertiary)]">Detection</div>
+          <div className="mt-1 font-mono text-xs">{state.reason || "(no reason provided)"}</div>
+        </div>
+        <p className="mt-3 text-sm text-[color:var(--ck-text-secondary)]">
+          Once an orchestrator agent is installed (e.g. <code>&lt;teamId&gt;-swarm-orchestrator</code>), this tab will show:
+          tmux sessions, git worktrees/branches, and active task state.
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="mt-6 ck-glass-strong p-4">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <div className="text-sm font-medium text-[color:var(--ck-text-primary)]">Orchestrator</div>
+          <div className="mt-1 text-xs text-[color:var(--ck-text-secondary)]">
+            Agent: <span className="font-mono">{state.agent.id}</span>
+            {state.agent.identityName ? ` (${state.agent.identityName})` : ""}
+          </div>
+          <div className="mt-1 text-xs text-[color:var(--ck-text-secondary)]">
+            Workspace: <span className="font-mono">{state.agent.workspace}</span>
+          </div>
+        </div>
+      </div>
+
+      <div className="mt-5 grid grid-cols-1 gap-4 lg:grid-cols-2">
+        <section className="rounded-[var(--ck-radius-sm)] border border-white/10 bg-black/20 p-3">
+          <div className="text-sm font-medium text-[color:var(--ck-text-primary)]">tmux sessions</div>
+          {state.tmuxSessions.length ? (
+            <ul className="mt-2 space-y-2">
+              {state.tmuxSessions.map((s) => (
+                <li key={s.name} className="text-sm text-[color:var(--ck-text-secondary)]">
+                  <span className="font-mono">{s.name}</span>
+                  <span className="ml-2 text-xs text-[color:var(--ck-text-tertiary)]">
+                    attached={String(s.attached)}
+                    {typeof s.windows === "number" ? ` windows=${s.windows}` : ""}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <div className="mt-2 text-sm text-[color:var(--ck-text-secondary)]">No sessions detected (or tmux not running).</div>
+          )}
+        </section>
+
+        <section className="rounded-[var(--ck-radius-sm)] border border-white/10 bg-black/20 p-3">
+          <div className="text-sm font-medium text-[color:var(--ck-text-primary)]">git worktrees</div>
+          {state.worktrees.length ? (
+            <ul className="mt-2 space-y-2">
+              {state.worktrees.map((w) => (
+                <li key={w.path} className="text-sm text-[color:var(--ck-text-secondary)]">
+                  <div className="font-mono text-xs">{w.path}</div>
+                  <div className="text-xs text-[color:var(--ck-text-tertiary)]">
+                    {w.branch ? w.branch : "(no branch)"}
+                    {w.sha ? ` @ ${w.sha.slice(0, 7)}` : ""}
+                  </div>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <div className="mt-2 text-sm text-[color:var(--ck-text-secondary)]">No worktrees detected.</div>
+          )}
+        </section>
+      </div>
+
+      <section className="mt-4 rounded-[var(--ck-radius-sm)] border border-white/10 bg-black/20 p-3">
+        <div className="text-sm font-medium text-[color:var(--ck-text-primary)]">Active tasks</div>
+        {state.activeTasksSummary ? (
+          <div className="mt-2 text-sm text-[color:var(--ck-text-secondary)]">
+            <div className="font-mono text-xs">{state.activeTasksSummary.path}</div>
+            <div className="mt-1 text-xs text-[color:var(--ck-text-tertiary)]">
+              {typeof state.activeTasksSummary.taskCount === "number" ? `tasks=${state.activeTasksSummary.taskCount}` : "tasks=?"}
+              {state.activeTasksSummary.rawType ? ` type=${state.activeTasksSummary.rawType}` : ""}
+            </div>
+          </div>
+        ) : (
+          <div className="mt-2 text-sm text-[color:var(--ck-text-secondary)]">No active-tasks.json found.</div>
+        )}
+      </section>
+
+      <section className="mt-4 rounded-[var(--ck-radius-sm)] border border-white/10 bg-black/20 p-3">
+        <div className="text-sm font-medium text-[color:var(--ck-text-primary)]">Where to change settings</div>
+        <p className="mt-2 text-sm text-[color:var(--ck-text-secondary)]">
+          These are the common knobs for a swarm/orchestrator scaffold (read-only references):
+        </p>
+        <ul className="mt-2 list-disc space-y-1 pl-5 text-sm text-[color:var(--ck-text-secondary)]">
+          {state.settingsPaths.map((p) => (
+            <li key={p} className="font-mono text-xs">
+              {p}
+            </li>
+          ))}
+        </ul>
+      </section>
+    </div>
+  );
+}
