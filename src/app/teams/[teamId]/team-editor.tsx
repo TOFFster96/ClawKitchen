@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { DeleteTeamModal } from "./DeleteTeamModal";
 import { PublishChangesModal } from "./PublishChangesModal";
 import { useToast } from "@/components/ToastProvider";
+import { OrchestratorPanel } from "./OrchestratorPanel";
 
 type RecipeListItem = {
   id: string;
@@ -107,7 +108,7 @@ export default function TeamEditor({ teamId }: { teamId: string }) {
   const [toName, setToName] = useState<string>(teamId);
   const [content, setContent] = useState<string>("");
   const [loadedRecipeHash, setLoadedRecipeHash] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<"recipe" | "agents" | "skills" | "cron" | "files">("recipe");
+  const [activeTab, setActiveTab] = useState<"recipe" | "agents" | "skills" | "cron" | "files" | "orchestrator">("recipe");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [publishing, setPublishing] = useState(false);
@@ -515,6 +516,7 @@ export default function TeamEditor({ teamId }: { teamId: string }) {
             { id: "skills", label: "Skills" },
             { id: "cron", label: "Cron" },
             { id: "files", label: "Files" },
+            { id: "orchestrator", label: "Orchestrator" },
           ] as const
         ).map((t) => (
           <button
@@ -1091,6 +1093,8 @@ export default function TeamEditor({ teamId }: { teamId: string }) {
           </div>
         </div>
       ) : null}
+
+      {activeTab === "orchestrator" ? <OrchestratorPanel teamId={teamId} /> : null}
 
       {/* markdown editor lives below for convenience */}
       {activeTab === "recipe" ? (
