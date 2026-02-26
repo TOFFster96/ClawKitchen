@@ -6,6 +6,17 @@ import { useEffect, useMemo, useState } from "react";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { ToastProvider } from "@/components/ToastProvider";
 
+function Icon({ children }: { children: React.ReactNode }) {
+  return (
+    <span
+      className="grid size-5 place-items-center text-[color:var(--ck-text-secondary)]"
+      aria-hidden
+    >
+      {children}
+    </span>
+  );
+}
+
 function SideNavLink({
   href,
   label,
@@ -25,8 +36,8 @@ function SideNavLink({
       title={label}
       className={
         active
-          ? "flex items-center gap-2 rounded-[var(--ck-radius-sm)] bg-white/10 px-3 py-2 text-sm font-medium text-[color:var(--ck-text-primary)]"
-          : "flex items-center gap-2 rounded-[var(--ck-radius-sm)] px-3 py-2 text-sm font-medium text-[color:var(--ck-text-secondary)] transition-colors hover:bg-white/5 hover:text-[color:var(--ck-text-primary)]"
+          ? "flex items-center gap-3 rounded-[var(--ck-radius-sm)] bg-white/10 px-3 py-2 text-sm font-medium text-[color:var(--ck-text-primary)]"
+          : "flex items-center gap-3 rounded-[var(--ck-radius-sm)] px-3 py-2 text-sm font-medium text-[color:var(--ck-text-secondary)] transition-colors hover:bg-white/5 hover:text-[color:var(--ck-text-primary)]"
       }
     >
       <span className={collapsed ? "mx-auto" : ""}>{icon}</span>
@@ -81,27 +92,79 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     })();
   }, []);
 
-  const teamNav = currentTeamId
-    ? [
-        { href: `/teams/${encodeURIComponent(currentTeamId)}?tab=recipe`, label: "Overview", icon: "🏷️" },
-        { href: `/teams/${encodeURIComponent(currentTeamId)}?tab=workflows`, label: "Workflows", icon: "🗺️" },
-        { href: `/teams/${encodeURIComponent(currentTeamId)}?tab=agents`, label: "Agents", icon: "🧑‍🍳" },
-        { href: `/teams/${encodeURIComponent(currentTeamId)}?tab=files`, label: "Files", icon: "📁" },
-        { href: `/teams/${encodeURIComponent(currentTeamId)}?tab=skills`, label: "Skills", icon: "🧰" },
-        { href: `/teams/${encodeURIComponent(currentTeamId)}?tab=cron`, label: "Cron", icon: "⏱️" },
-        { href: `/teams/${encodeURIComponent(currentTeamId)}?tab=orchestrator`, label: "Orchestrator", icon: "🎛️" },
-        { href: `/tickets`, label: "Tickets", icon: "🧾" },
-        { href: `/goals?team=${encodeURIComponent(currentTeamId)}`, label: "Goals", icon: "🎯" },
-      ]
-    : [];
-
   const globalNav = [
-    { href: `/`, label: "Home", icon: "🏠" },
-    { href: `/recipes`, label: "Recipes", icon: "📜" },
-    { href: `/tickets`, label: "Tickets", icon: "🧾" },
-    { href: `/goals`, label: "Goals", icon: "🎯" },
-    { href: `/cron-jobs`, label: "Cron jobs", icon: "⏱️" },
-    { href: `/settings`, label: "Settings", icon: "⚙️" },
+    {
+      href: `/`,
+      label: "Home",
+      icon: (
+        <Icon>
+          <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2">
+            <path d="M3 11l9-8 9 8" />
+            <path d="M5 10v10h14V10" />
+          </svg>
+        </Icon>
+      ),
+    },
+    {
+      href: `/recipes`,
+      label: "Recipes",
+      icon: (
+        <Icon>
+          <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2">
+            <path d="M6 4h12v16H6z" />
+            <path d="M9 8h6" />
+            <path d="M9 12h6" />
+          </svg>
+        </Icon>
+      ),
+    },
+    {
+      href: `/tickets`,
+      label: "Tickets",
+      icon: (
+        <Icon>
+          <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2">
+            <path d="M4 7h16v4a2 2 0 0 1 0 4v4H4v-4a2 2 0 0 0 0-4z" />
+          </svg>
+        </Icon>
+      ),
+    },
+    {
+      href: `/goals`,
+      label: "Goals",
+      icon: (
+        <Icon>
+          <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2">
+            <circle cx="12" cy="12" r="9" />
+            <path d="M12 7v5l3 3" />
+          </svg>
+        </Icon>
+      ),
+    },
+    {
+      href: `/cron-jobs`,
+      label: "Cron jobs",
+      icon: (
+        <Icon>
+          <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2">
+            <circle cx="12" cy="12" r="9" />
+            <path d="M12 7v5" />
+          </svg>
+        </Icon>
+      ),
+    },
+    {
+      href: `/settings`,
+      label: "Settings",
+      icon: (
+        <Icon>
+          <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2">
+            <path d="M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7Z" />
+            <path d="M19.4 15a7.9 7.9 0 0 0 .1-1l2-1.5-2-3.5-2.4.5a7.8 7.8 0 0 0-1.7-1L13.5 3h-4L8.6 6.5a7.8 7.8 0 0 0-1.7 1L4.5 7l-2 3.5 2 1.5a7.9 7.9 0 0 0 .1 1l-2 1.5 2 3.5 2.4-.5a7.8 7.8 0 0 0 1.7 1L10.5 21h4l.9-3.5a7.8 7.8 0 0 0 1.7-1l2.4.5 2-3.5-2-1.5Z" />
+          </svg>
+        </Icon>
+      ),
+    },
   ];
 
   const sideWidth = collapsed ? "w-16" : "w-72";
@@ -159,25 +222,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           </div>
 
           <nav className="min-h-0 flex-1 overflow-auto p-2">
-            {currentTeamId ? (
-              <>
-                <div className={collapsed ? "px-2 pb-2 pt-2 text-center text-[10px] font-semibold uppercase tracking-wide text-[color:var(--ck-text-tertiary)]" : "px-2 pb-2 pt-2 text-xs font-semibold uppercase tracking-wide text-[color:var(--ck-text-tertiary)]"}>
-                  Team
-                </div>
-                {teamNav.map((it) => (
-                  <SideNavLink
-                    key={it.href}
-                    href={it.href}
-                    label={it.label}
-                    icon={<span aria-hidden>{it.icon}</span>}
-                    collapsed={collapsed}
-                    active={pathname.startsWith(`/teams/${encodeURIComponent(currentTeamId)}`) && it.href.includes("tab=") ? it.href.includes("tab=") : pathname === it.href}
-                  />
-                ))}
-              </>
-            ) : null}
-
-            <div className={collapsed ? "mt-4 px-2 pb-2 pt-2 text-center text-[10px] font-semibold uppercase tracking-wide text-[color:var(--ck-text-tertiary)]" : "mt-4 px-2 pb-2 pt-2 text-xs font-semibold uppercase tracking-wide text-[color:var(--ck-text-tertiary)]"}>
+            <div className={collapsed ? "mt-2 px-2 pb-2 pt-2 text-center text-[10px] font-semibold uppercase tracking-wide text-[color:var(--ck-text-tertiary)]" : "mt-2 px-2 pb-2 pt-2 text-xs font-semibold uppercase tracking-wide text-[color:var(--ck-text-tertiary)]"}>
               Global
             </div>
             {globalNav.map((it) => (
