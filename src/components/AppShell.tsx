@@ -1,15 +1,37 @@
 "use client";
 
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { ToastProvider } from "@/components/ToastProvider";
 
-function NavLink({ href, label }: { href: string; label: string }) {
+function TopNavLink({ href, label }: { href: string; label: string }) {
+  return (
+    <Link
+      href={href}
+      className="rounded-[var(--ck-radius-sm)] px-3 py-1.5 text-sm font-medium transition-colors text-[color:var(--ck-text-secondary)] hover:bg-[color:var(--ck-bg-glass)] hover:text-[color:var(--ck-text-primary)]"
+    >
+      {label}
+    </Link>
+  );
+}
+
+function SideNavLink({
+  href,
+  label,
+  active,
+}: {
+  href: string;
+  label: string;
+  active: boolean;
+}) {
   return (
     <Link
       href={href}
       className={
-        "rounded-[var(--ck-radius-sm)] px-3 py-1.5 text-sm font-medium transition-colors text-[color:var(--ck-text-secondary)] hover:bg-[color:var(--ck-bg-glass)] hover:text-[color:var(--ck-text-primary)]"
+        active
+          ? "rounded-[var(--ck-radius-sm)] bg-white/10 px-3 py-2 text-sm font-medium text-[color:var(--ck-text-primary)]"
+          : "rounded-[var(--ck-radius-sm)] px-3 py-2 text-sm font-medium text-[color:var(--ck-text-secondary)] transition-colors hover:bg-white/5 hover:text-[color:var(--ck-text-primary)]"
       }
     >
       {label}
@@ -18,77 +40,32 @@ function NavLink({ href, label }: { href: string; label: string }) {
 }
 
 export function AppShell({ children }: { children: React.ReactNode }) {
-  return (
-    <ToastProvider>
-      <div className="flex h-dvh w-dvw bg-[color:var(--ck-bg)] text-[color:var(--ck-text-primary)]">
-        {/* Left nav (teams-first) */}
-        <aside className="hidden w-64 shrink-0 border-r border-[color:var(--ck-border-subtle)] bg-[color:var(--ck-bg-glass)] backdrop-blur-[var(--ck-glass-blur)] md:flex md:flex-col">
-          <div className="flex items-center justify-between gap-3 border-b border-[color:var(--ck-border-subtle)] px-4 py-3">
-            <Link href="/" className="text-sm font-semibold tracking-tight">
-              Claw Kitchen
-            </Link>
-          </div>
+  const pathname = usePathname() || "/";
 
-          <nav className="flex flex-1 flex-col gap-1 overflow-y-auto px-3 py-3">
-            <div className="px-2 pt-2 pb-1 text-xs font-semibold uppercase tracking-wide text-[color:var(--ck-text-tertiary)]">
-              Teams
-            </div>
-            <NavLink href="/" label="Home" />
-            <NavLink href="/goals" label="Goals" />
+  // Incremental rollout: only team routes use the full-screen left-nav shell for now.
+  const useLeftNavShell = pathname.startsWith("/teams/");
 
-            <div className="mt-4 px-2 pt-2 pb-1 text-xs font-semibold uppercase tracking-wide text-[color:var(--ck-text-tertiary)]">
-              Build
-            </div>
-            <NavLink href="/recipes" label="Recipes" />
-            <NavLink href="/tickets" label="Tickets" />
-            <NavLink href="/cron-jobs" label="Cron jobs" />
-            <NavLink href="/settings" label="Settings" />
-          </nav>
-
-          <div className="flex items-center justify-between gap-2 border-t border-[color:var(--ck-border-subtle)] px-4 py-3">
-            <a
-              href="https://github.com/JIGGAI/ClawRecipes/tree/main/docs"
-              target="_blank"
-              rel="noreferrer"
-              className="rounded-[var(--ck-radius-sm)] px-2 py-1 text-sm font-medium text-[color:var(--ck-text-secondary)] transition-colors hover:bg-[color:var(--ck-bg-glass)] hover:text-[color:var(--ck-text-primary)]"
-            >
-              Docs
-            </a>
-            <ThemeToggle />
-          </div>
-        </aside>
-
-        {/* Main region */}
-        <div className="flex min-w-0 flex-1 flex-col">
-          {/* Top bar (mobile + global actions) */}
+  if (!useLeftNavShell) {
+    return (
+      <ToastProvider>
+        <div className="min-h-screen">
           <header className="sticky top-0 z-50 border-b border-[color:var(--ck-border-subtle)] bg-[color:var(--ck-bg-glass)] backdrop-blur-[var(--ck-glass-blur)]">
-            <div className="flex items-center justify-between gap-4 px-4 py-3">
-              <div className="flex items-center gap-3 md:hidden">
+            <div className="mx-auto flex max-w-6xl items-center justify-between gap-4 px-4 py-3">
+              <div className="flex items-center gap-3">
                 <Link href="/" className="text-sm font-semibold tracking-tight">
                   Claw Kitchen
                 </Link>
-                <nav className="flex items-center gap-1">
-                  <NavLink href="/" label="Home" />
-                  <NavLink href="/recipes" label="Recipes" />
-                  <NavLink href="/tickets" label="Tickets" />
+                <nav className="hidden items-center gap-1 sm:flex">
+                  <TopNavLink href="/recipes" label="Recipes" />
+                  <TopNavLink href="/tickets" label="Tickets" />
+                  <TopNavLink href="/goals" label="Goals" />
+                  {/* Channels hidden for release */}
+                  <TopNavLink href="/cron-jobs" label="Cron jobs" />
+                  <TopNavLink href="/settings" label="Settings" />
                 </nav>
               </div>
 
-              <div className="ml-auto flex items-center gap-2 md:hidden">
-                <a
-                  href="https://github.com/JIGGAI/ClawRecipes/tree/main/docs"
-                  target="_blank"
-                  rel="noreferrer"
-                  className="rounded-[var(--ck-radius-sm)] px-3 py-1.5 text-sm font-medium text-[color:var(--ck-text-secondary)] transition-colors hover:bg-[color:var(--ck-bg-glass)] hover:text-[color:var(--ck-text-primary)]"
-                >
-                  Docs
-                </a>
-                <ThemeToggle />
-              </div>
-
-              {/* Desktop top bar can stay minimal; left nav is primary */}
-              <div className="hidden md:flex md:flex-1" />
-              <div className="hidden items-center gap-2 md:flex">
+              <div className="flex items-center gap-2">
                 <a
                   href="https://github.com/JIGGAI/ClawRecipes/tree/main/docs"
                   target="_blank"
@@ -102,7 +79,61 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             </div>
           </header>
 
-          <main className="min-h-0 flex-1 overflow-auto p-4 md:p-6">{children}</main>
+          <main className="mx-auto max-w-6xl px-4 py-8">{children}</main>
+        </div>
+      </ToastProvider>
+    );
+  }
+
+  const sideItems = [
+    { href: "/recipes", label: "Recipes" },
+    { href: "/tickets", label: "Tickets" },
+    { href: "/goals", label: "Goals" },
+    { href: "/cron-jobs", label: "Cron jobs" },
+    { href: "/settings", label: "Settings" },
+  ];
+
+  return (
+    <ToastProvider>
+      <div className="h-dvh w-dvw overflow-hidden">
+        <div className="flex h-full">
+          <aside className="flex w-64 shrink-0 flex-col border-r border-[color:var(--ck-border-subtle)] bg-[color:var(--ck-bg-glass)] backdrop-blur-[var(--ck-glass-blur)]">
+            <div className="flex h-14 items-center justify-between gap-2 border-b border-[color:var(--ck-border-subtle)] px-4">
+              <Link href="/" className="text-sm font-semibold tracking-tight">
+                Claw Kitchen
+              </Link>
+              <ThemeToggle />
+            </div>
+
+            <nav className="flex min-h-0 flex-1 flex-col gap-1 overflow-auto p-2">
+              <div className="px-2 pb-1 pt-2 text-xs font-semibold uppercase tracking-wide text-[color:var(--ck-text-tertiary)]">
+                Navigation
+              </div>
+              {sideItems.map((it) => (
+                <SideNavLink
+                  key={it.href}
+                  href={it.href}
+                  label={it.label}
+                  active={pathname === it.href || pathname.startsWith(it.href + "/")}
+                />
+              ))}
+            </nav>
+
+            <div className="border-t border-[color:var(--ck-border-subtle)] p-3">
+              <a
+                href="https://github.com/JIGGAI/ClawRecipes/tree/main/docs"
+                target="_blank"
+                rel="noreferrer"
+                className="block rounded-[var(--ck-radius-sm)] px-3 py-2 text-sm font-medium text-[color:var(--ck-text-secondary)] transition-colors hover:bg-white/5 hover:text-[color:var(--ck-text-primary)]"
+              >
+                Docs
+              </a>
+            </div>
+          </aside>
+
+          <div className="flex min-w-0 flex-1 flex-col">
+            <main className="min-h-0 flex-1 overflow-auto">{children}</main>
+          </div>
         </div>
       </div>
     </ToastProvider>
