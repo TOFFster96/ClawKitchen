@@ -27,13 +27,18 @@ async function getTeamDisplayName(teamId: string) {
 
 export default async function TeamPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ teamId: string }>;
+  searchParams?: Promise<Record<string, string | string[] | undefined>>;
 }) {
   // Team pages depend on live OpenClaw state; never serve cached HTML.
   noStore();
 
   const { teamId } = await params;
+  const sp = (await searchParams) ?? {};
+  const tabRaw = sp.tab;
+  const tab = Array.isArray(tabRaw) ? tabRaw[0] : tabRaw;
   const name = await getTeamDisplayName(teamId);
 
   return (
@@ -56,7 +61,7 @@ export default async function TeamPage({
         </div>
       </div>
 
-      <TeamEditor teamId={teamId} />
+      <TeamEditor teamId={teamId} initialTab={typeof tab === "string" ? tab : undefined} />
     </div>
   );
 }
