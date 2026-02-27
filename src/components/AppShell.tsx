@@ -234,8 +234,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           </div>
 
           <nav className="min-h-0 flex-1 overflow-auto p-2">
-            <div className={collapsed ? "mt-2 px-2 pb-2 pt-2 text-center text-[10px] font-semibold uppercase tracking-wide text-[color:var(--ck-text-tertiary)]" : "mt-2 px-2 pb-2 pt-2 text-xs font-semibold uppercase tracking-wide text-[color:var(--ck-text-tertiary)]"}>
-              Global
+            <div className={collapsed ? "mt-2 px-2 pb-2 pt-2" : "mt-2 px-2 pb-2 pt-2"}>
+              {/* section label intentionally omitted */}
             </div>
             {globalNav.map((it) => (
               <SideNavLink
