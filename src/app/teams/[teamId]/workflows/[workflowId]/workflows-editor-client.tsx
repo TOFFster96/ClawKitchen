@@ -125,7 +125,16 @@ export default function WorkflowsEditorClient({
 
   return (
     <div className="ck-glass flex h-full min-h-0 w-full flex-col p-4">
-      <div className="flex flex-wrap items-center justify-between gap-3">
+      <div className="flex items-center justify-between gap-3">
+        <Link
+          href={`/teams/${encodeURIComponent(teamId)}?tab=workflows`}
+          className="text-sm font-medium hover:underline"
+        >
+          ← Back
+        </Link>
+      </div>
+
+      <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
         <div className="min-w-0">
           <div className="truncate text-sm font-medium text-[color:var(--ck-text-primary)]">
             Workflow editor — {workflowId}.workflow.json
@@ -219,7 +228,7 @@ export default function WorkflowsEditorClient({
             href={`/teams/${encodeURIComponent(teamId)}?tab=workflows`}
             className="rounded-[var(--ck-radius-sm)] border border-white/10 bg-white/5 px-3 py-2 text-sm font-medium text-[color:var(--ck-text-primary)] hover:bg-white/10"
           >
-            Back
+            Workflows
           </Link>
         </div>
       </div>
