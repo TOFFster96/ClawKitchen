@@ -1311,10 +1311,18 @@ export default function TeamEditor({ teamId, initialTab }: { teamId: string; ini
                           meta: {},
                         };
 
-                        setSelectedWorkflowFile(`${safeId}.workflow.json`);
-                        setWorkflowJsonText(JSON.stringify(workflow, null, 2) + "\n");
+                        try {
+                          sessionStorage.setItem(
+                            `ck-wf-draft:${teamId}:${safeId}`,
+                            JSON.stringify(workflow, null, 2) + "\n"
+                          );
+                        } catch {
+                          // ignore
+                        }
                         setWorkflowCreateOpen(false);
-                        setWorkflowEditorOpen(true);
+                        router.push(
+                          `/teams/${encodeURIComponent(teamId)}/workflows/${encodeURIComponent(safeId)}?draft=1`
+                        );
                       }}
                       className="rounded-[var(--ck-radius-sm)] bg-[var(--ck-accent-red)] px-3 py-2 text-sm font-medium text-white shadow-[var(--ck-shadow-1)]"
                     >
@@ -1354,25 +1362,10 @@ export default function TeamEditor({ teamId, initialTab }: { teamId: string; ini
                         <button
                           type="button"
                           disabled={workflowSaving}
-                          onClick={async () => {
-                            setSelectedWorkflowFile(f);
-                            setWorkflowSaving(true);
-                            setWorkflowFilesError("");
-                            try {
-                              const id = String(f).replace(/\.workflow\.json$/i, "");
-                              const res = await fetch(
-                                `/api/teams/workflows?teamId=${encodeURIComponent(teamId)}&id=${encodeURIComponent(id)}`,
-                                { cache: "no-store" }
-                              );
-                              const json = await res.json();
-                              if (!res.ok || !json.ok) throw new Error(json.error || "Failed to load workflow");
-                              setWorkflowJsonText(JSON.stringify(json.workflow, null, 2) + "\n");
-                              setWorkflowEditorOpen(true);
-                            } catch (e: unknown) {
-                              setWorkflowFilesError(e instanceof Error ? e.message : String(e));
-                            } finally {
-                              setWorkflowSaving(false);
-                            }
+                          onClick={() => {
+                            const id = String(f).replace(/\.workflow\.json$/i, "");
+                            // Use a dedicated editor page so the canvas can use the full right-hand pane.
+                            router.push(`/teams/${encodeURIComponent(teamId)}/workflows/${encodeURIComponent(id)}`);
                           }}
                           className="rounded-[var(--ck-radius-sm)] border border-white/10 bg-white/5 px-3 py-2 text-sm font-medium text-[color:var(--ck-text-primary)] shadow-[var(--ck-shadow-1)] hover:bg-white/10 disabled:opacity-50"
                         >
