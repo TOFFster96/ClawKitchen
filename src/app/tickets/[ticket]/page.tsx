@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { getTicketMarkdown } from "@/lib/tickets";
 
+// Ticket detail should always reflect current stage/file; do not cache.
 export const dynamic = "force-dynamic";
 
 export default async function TicketDetailPage({

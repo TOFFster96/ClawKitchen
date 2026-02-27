@@ -1,6 +1,6 @@
 {
   "name": "@jiggai/kitchen",
-  "version": "0.1.8",
+  "version": "0.1.9",
   "private": false,
   "openclaw": {
     "extensions": [
@@ -9,7 +9,7 @@
   },
   "scripts": {
     "dev": "next dev",
-    "build": "next build",
+    "build": "NODE_ENV=production next build",
     "postbuild": "node scripts/copy-standalone-static.mjs",
     "start": "next start",
     "lint": "eslint",
