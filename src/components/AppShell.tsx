@@ -35,12 +35,15 @@ function SideNavLink({
       href={href}
       title={label}
       className={
-        active
-          ? "flex items-center gap-4 rounded-[var(--ck-radius-sm)] bg-white/10 px-4 py-3 text-sm font-medium text-[color:var(--ck-text-primary)]"
-          : "flex items-center gap-4 rounded-[var(--ck-radius-sm)] px-4 py-3 text-sm font-medium text-[color:var(--ck-text-secondary)] transition-colors hover:bg-white/5 hover:text-[color:var(--ck-text-primary)]"
+        (
+          active
+            ? "flex items-center rounded-[var(--ck-radius-sm)] bg-white/10 text-sm font-medium text-[color:var(--ck-text-primary)]"
+            : "flex items-center rounded-[var(--ck-radius-sm)] text-sm font-medium text-[color:var(--ck-text-secondary)] transition-colors hover:bg-white/5 hover:text-[color:var(--ck-text-primary)]"
+        ) +
+        (collapsed ? " justify-center px-0 py-3" : " gap-4 px-4 py-3")
       }
     >
-      <span className={collapsed ? "mx-auto" : ""}>{icon}</span>
+      {icon}
       {collapsed ? null : <span>{label}</span>}
     </Link>
   );
